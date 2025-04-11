@@ -11,21 +11,17 @@ from feddersen.connectors.base import VectorSearchClient
 from feddersen.connectors.pgvector.auth_util import FilterUtils
 from feddersen.entra.groups import UserGroupsRetriever
 from feddersen.models import ExtraMetadata
+from open_webui.config import (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET,
+                               MICROSOFT_CLIENT_TENANT_ID, PGVECTOR_DB_URL,
+                               PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH)
+from open_webui.env import SRC_LOG_LEVELS
+from open_webui.models.users import UserModel
+from open_webui.retrieval.vector.main import (GetResult, SearchResult,
+                                              VectorItem)
 from pgvector.sqlalchemy import Vector
 from pydantic import ValidationError
-from sqlalchemy import (
-    Column,
-    Integer,
-    MetaData,
-    Table,
-    Text,
-    cast,
-    column,
-    create_engine,
-    select,
-    text,
-    values,
-)
+from sqlalchemy import (Column, Integer, MetaData, Table, Text, cast, column,
+                        create_engine, select, text, values)
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.ext.mutable import MutableDict
@@ -33,17 +29,6 @@ from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import true
 from sqlalchemy.sql.elements import ColumnElement
-
-from open_webui.config import (
-    MICROSOFT_CLIENT_ID,
-    MICROSOFT_CLIENT_SECRET,
-    MICROSOFT_CLIENT_TENANT_ID,
-    PGVECTOR_DB_URL,
-    PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
-)
-from open_webui.env import SRC_LOG_LEVELS
-from open_webui.models.users import UserModel
-from open_webui.retrieval.vector.main import GetResult, SearchResult, VectorItem
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -70,7 +55,7 @@ class DocumentAuthChunk(Base):
         text: Optional[str] = None,
         vector: Optional[List[float]] = None,
         vmetadata: Optional[Dict[str, Any]] = None,
-        custom_metadata_key: str = "middleware_metadata",
+        custom_metadata_key: str = EXTRA_MIDDLEWARE_METADATA_KEY,
         replace_keys: dict = None,
     ) -> "DocumentAuthChunk":
         """Factory-Methode to create a DocumentAuthChunk. Used to manipulate the metadata"""
@@ -107,8 +92,6 @@ class DocumentAuthChunk(Base):
         Returns:
             Tuple of (processed metadata dict, auth metadata dict)
         """
-        # Initialize default return values
-        file_auth = {"groups": [], "users": []}
         custom_meta = {}
 
         # Create a copy of the original metadata or start with an empty dict
@@ -122,7 +105,8 @@ class DocumentAuthChunk(Base):
             except json.JSONDecodeError:
                 # If parsing as json fails, try parsing as python object (safe version)
                 try:
-                    meta[custom_metadata_key] = ast.literal_eval(custom_metadata)
+                    meta[custom_metadata_key] = ast.literal_eval(
+                        custom_metadata)
                 except (ValueError, SyntaxError):
                     # If both parsing attempts fail, keep it as a string
                     log.warning(
@@ -138,7 +122,7 @@ class DocumentAuthChunk(Base):
             # Remove the custom metadata key from the main metadata
             # so that we can check for undefined in the frontend
             meta.pop(custom_metadata_key, None)
-            return meta, file_auth
+            return meta, {"groups": [], "users": []}
 
         # Extract the custom metadata section
         custom_meta_main = meta.pop(custom_metadata_key, {})
@@ -167,7 +151,10 @@ class DocumentAuthChunk(Base):
                         f"Couldn't replace {native_key} with {custom_field}: {str(e)}"
                     )
 
-        return meta, file_auth.model_dump() if not isinstance(file_auth, dict) else {}
+        # make sure the user_ids are all lower case for exact matching
+        file_auth.users = [user.lower() for user in file_auth.users]
+
+        return meta, file_auth.model_dump()
 
 
 class FeddersenPGVectorConnector(VectorSearchClient):
@@ -201,7 +188,8 @@ class FeddersenPGVectorConnector(VectorSearchClient):
 
         try:
             # Ensure the pgvector extension is available
-            self.session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            self.session.execute(
+                text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
             # Check vector length consistency
             self.check_vector_length()
@@ -328,7 +316,8 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             query_vectors = (
                 values(qid_col, q_vector_col)
                 .data(
-                    [(idx, vector_expr(vector)) for idx, vector in enumerate(vectors)]
+                    [(idx, vector_expr(vector))
+                     for idx, vector in enumerate(vectors)]
                 )
                 .alias("query_vectors")
             )
@@ -339,7 +328,8 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                 DocumentAuthChunk.text,
                 DocumentAuthChunk.vmetadata,
                 (
-                    DocumentAuthChunk.vector.cosine_distance(query_vectors.c.q_vector)
+                    DocumentAuthChunk.vector.cosine_distance(
+                        query_vectors.c.q_vector)
                 ).label("distance"),
             ).where(DocumentAuthChunk.collection_name == collection_name)
 
@@ -608,7 +598,8 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                     )
             deleted = query.delete(synchronize_session=False)
             self.session.commit()
-            log.info(f"Deleted {deleted} items from collection '{collection_name}'.")
+            log.info(
+                f"Deleted {deleted} items from collection '{collection_name}'.")
         except Exception as e:
             self.session.rollback()
             log.exception(f"Error during delete: {e}")
