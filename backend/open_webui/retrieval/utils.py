@@ -573,7 +573,9 @@ def get_sources_from_files(
         except Exception as e:
             log.exception(e)
 
-    log.warning(f"get_sources_from_files: {len(sources)} sources found for {queries}")
+    log.warning(
+        f"get_sources_from_files: {sum(len(s.get('document', [])) for s in sources)} sources found for {queries}"
+    )
     return sources
 
 
