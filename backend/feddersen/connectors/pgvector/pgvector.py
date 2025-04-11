@@ -11,17 +11,31 @@ from feddersen.connectors.base import VectorSearchClient
 from feddersen.connectors.pgvector.auth_util import FilterUtils
 from feddersen.entra.groups import UserGroupsRetriever
 from feddersen.models import ExtraMetadata
-from open_webui.config import (MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET,
-                               MICROSOFT_CLIENT_TENANT_ID, PGVECTOR_DB_URL,
-                               PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH)
+from open_webui.config import (
+    MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_CLIENT_TENANT_ID,
+    PGVECTOR_DB_URL,
+    PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
+)
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
-from open_webui.retrieval.vector.main import (GetResult, SearchResult,
-                                              VectorItem)
+from open_webui.retrieval.vector.main import GetResult, SearchResult, VectorItem
 from pgvector.sqlalchemy import Vector
 from pydantic import ValidationError
-from sqlalchemy import (Column, Integer, MetaData, Table, Text, cast, column,
-                        create_engine, select, text, values)
+from sqlalchemy import (
+    Column,
+    Integer,
+    MetaData,
+    Table,
+    Text,
+    cast,
+    column,
+    create_engine,
+    select,
+    text,
+    values,
+)
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.ext.mutable import MutableDict
@@ -105,8 +119,7 @@ class DocumentAuthChunk(Base):
             except json.JSONDecodeError:
                 # If parsing as json fails, try parsing as python object (safe version)
                 try:
-                    meta[custom_metadata_key] = ast.literal_eval(
-                        custom_metadata)
+                    meta[custom_metadata_key] = ast.literal_eval(custom_metadata)
                 except (ValueError, SyntaxError):
                     # If both parsing attempts fail, keep it as a string
                     log.warning(
@@ -188,8 +201,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
 
         try:
             # Ensure the pgvector extension is available
-            self.session.execute(
-                text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            self.session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
 
             # Check vector length consistency
             self.check_vector_length()
@@ -316,8 +328,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             query_vectors = (
                 values(qid_col, q_vector_col)
                 .data(
-                    [(idx, vector_expr(vector))
-                     for idx, vector in enumerate(vectors)]
+                    [(idx, vector_expr(vector)) for idx, vector in enumerate(vectors)]
                 )
                 .alias("query_vectors")
             )
@@ -328,8 +339,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                 DocumentAuthChunk.text,
                 DocumentAuthChunk.vmetadata,
                 (
-                    DocumentAuthChunk.vector.cosine_distance(
-                        query_vectors.c.q_vector)
+                    DocumentAuthChunk.vector.cosine_distance(query_vectors.c.q_vector)
                 ).label("distance"),
             ).where(DocumentAuthChunk.collection_name == collection_name)
 
@@ -598,8 +608,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                     )
             deleted = query.delete(synchronize_session=False)
             self.session.commit()
-            log.info(
-                f"Deleted {deleted} items from collection '{collection_name}'.")
+            log.info(f"Deleted {deleted} items from collection '{collection_name}'.")
         except Exception as e:
             self.session.rollback()
             log.exception(f"Error during delete: {e}")

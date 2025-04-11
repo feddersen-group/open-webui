@@ -20,8 +20,7 @@ class TestDocumentAuthChunk:
             "source": "test_source",
         }
 
-        mocker.patch(
-            "feddersen.connectors.pgvector.pgvector.DocumentAuthChunk")
+        mocker.patch("feddersen.connectors.pgvector.pgvector.DocumentAuthChunk")
         # Mock prepare_metadata
         mocker.patch.object(
             DocumentAuthChunk,
@@ -66,10 +65,7 @@ class TestDocumentAuthChunk:
         assert meta == {}
         assert auth == {"groups": [], "users": []}
 
-    @pytest.mark.parametrize('users', [
-        ['first.last@test.de'],
-        ['First.Last@test.de']
-    ])
+    @pytest.mark.parametrize("users", [["first.last@test.de"], ["First.Last@test.de"]])
     def test_prepare_metadata_with_custom_metadata(self, mocker, users):
         expected_users = [user.lower() for user in users]
         # Setup mock for ExtraMetadata
@@ -83,7 +79,9 @@ class TestDocumentAuthChunk:
 
         mock_auth = mocker.MagicMock()
         mock_auth.model_dump.return_value = {
-            "groups": ["group1"], "users": expected_users}
+            "groups": ["group1"],
+            "users": expected_users,
+        }
 
         mock_extra = mocker.MagicMock()
         mock_extra.metadata = mock_metadata
