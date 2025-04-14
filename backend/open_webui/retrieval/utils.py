@@ -420,6 +420,8 @@ def get_sources_from_files(
         f"files: {len(files)} {queries} {embedding_function} {reranking_function} {full_context}"
     )
 
+    log.warning(f"get_sources_from_files: {k:=} {r:=}")
+
     extracted_collections = []
     relevant_contexts = []
 
@@ -576,6 +578,7 @@ def get_sources_from_files(
     log.warning(
         f"get_sources_from_files: {sum(len(s.get('document', [])) for s in sources)} sources found for {queries}"
     )
+    log.warning(f"get_sources_from_files: {sources}")
     return sources
 
 
