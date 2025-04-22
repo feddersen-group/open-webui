@@ -78,12 +78,12 @@
 					class="flex-1 overflow-hidden max-w-full py-0.5
 			{$showSidebar ? 'ml-1' : ''}
 			"
-			>
-				<!-- Only show the model selector when the chat has no content yet -->
-				{#if showModelSelector && (!chat || chat.id === '')}
-					<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
-				{/if}
-			</div>
+				>
+					<!-- Only show the model selector when the chat has no content yet -->
+					{#if showModelSelector && (!chat || chat.id === '')}
+						<ModelSelector bind:selectedModels showSetDefault={!shareEnabled} />
+					{/if}
+				</div>
 
 				<div class="self-start flex flex-none items-center text-gray-600 dark:text-gray-400">
 					<!-- <div class="md:hidden flex self-center w-[1px] h-5 mx-2 bg-gray-300 dark:bg-stone-700" /> -->

@@ -231,8 +231,8 @@
 	"Constrains effort on reasoning for reasoning models. Only applicable to reasoning models from specific providers that support reasoning effort.": "Korlátozza az érvelési erőfeszítést az érvelési modellek esetében. Csak bizonyos szolgáltatóktól származó, érvelési erőfeszítést támogató modellekre alkalmazható.",
 	"Contact Admin for WebUI Access": "Lépj kapcsolatba az adminnal a WebUI hozzáférésért",
 	"Content": "Tartalom",
-	"Context Item Url": "",
 	"Content Extraction Engine": "Tartalom kinyerési motor",
+	"Context Item Url": "",
 	"Context Length": "Kontextus hossz",
 	"Continue Response": "Válasz folytatása",
 	"Continue with {{provider}}": "Folytatás {{provider}} szolgáltatóval",
@@ -640,12 +640,8 @@
 	"Invalid file format.": "Érvénytelen fájlformátum.",
 	"Invalid JSON schema": "Érvénytelen JSON séma",
 	"Invalid Tag": "Érvénytelen címke",
-<<<<<<< HEAD
-	"is typing...": "",
-	"Item Url": "",
-=======
 	"is typing...": "ír...",
->>>>>>> upstream/main
+	"Item Url": "",
 	"January": "Január",
 	"Jina API Key": "Jina API kulcs",
 	"join our Discord for help.": "Csatlakozz a Discord szerverünkhöz segítségért.",
