@@ -4,6 +4,8 @@
 # This is in an extra file so that the import works and does not cause a circular import.
 EXTRA_MIDDLEWARE_METADATA_KEY = "middleware_metadata"
 
+PDF_EXTRACTION_GEMINI_PAGE_LIMIT = 20
+
 # Configuration for the GeminiLoader
 LITELLM_GEMINI_NAME = "gemini-2.0-flash"
 GEMINI_PDF_EXCTRACTION_PROMPT = """
