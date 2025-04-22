@@ -20,6 +20,7 @@ from langchain_community.document_loaders import (
     UnstructuredXMLLoader,
 )
 from langchain_core.documents import Document
+from pypdf import PdfReader
 
 from open_webui.retrieval.loaders.external_document import ExternalDocumentLoader
 
@@ -28,6 +29,7 @@ from open_webui.retrieval.loaders.datalab_marker import DatalabMarkerLoader
 
 
 from open_webui.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
+from feddersen.config import PDF_EXTRACTION_GEMINI_PAGE_LIMIT
 from feddersen.loaders.gemini import GeminiLoader
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
@@ -365,7 +367,13 @@ class Loader:
             )
         else:
             if file_ext == "pdf":
-                if self.kwargs.get("LITELLM_BASE_URL") and self.kwargs.get("LITELLM_API_KEY"):
+                # This is not yet rendering all pages but rather the format
+                num_pages = PdfReader(file_path).get_num_pages()
+                if (
+                    self.kwargs.get("LITELLM_BASE_URL")
+                    and self.kwargs.get("LITELLM_API_KEY")
+                    and num_pages <= PDF_EXTRACTION_GEMINI_PAGE_LIMIT
+                ):
                     loader = GeminiLoader(
                         base_url=self.kwargs.get("LITELLM_BASE_URL"),
                         api_key=self.kwargs.get("LITELLM_API_KEY"),
