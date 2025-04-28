@@ -45,6 +45,14 @@
 			);
 		}
 	}
+
+	const decodeString = (str: string) => {
+		try {
+			return decodeURIComponent(str);
+		} catch (e) {
+			return str;
+		}
+	};
 </script>
 
 <Modal size="lg" bind:show>
@@ -107,7 +115,7 @@
 										{#if document.metadata.middleware_metadata}
 											{$i18n.t('Item Url')}
 										{:else}
-											{decodeURIComponent(document?.metadata?.name ?? document.source.name)}
+											{decodeString(document?.metadata?.name ?? document.source.name)}
 										{/if}
 										{#if document?.metadata?.page}
 											<span class="text-xs text-gray-500 dark:text-gray-400">
