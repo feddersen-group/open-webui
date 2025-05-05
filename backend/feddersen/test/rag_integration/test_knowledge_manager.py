@@ -471,3 +471,142 @@ class TestKnowledgeManager:
             for temp_file in temp_files:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
+
+
+class TestKnowledgeManagerQuery:
+    """Test querying knowledge bases."""
+
+    @pytest.mark.asyncio
+    async def test_query_knowledge(
+        self, knowledge_manager: KnowledgeManager, knowledge_base_id: str
+    ):
+        """Test querying a knowledge base with auth permission filtering."""
+
+        test_user_mail = os.getenv("OPEN_WEBUI_TEST_USER_MAIL")
+        if not test_user_mail:
+            pytest.fail(
+                "Test user not set in environment variables. Cannot test user-specific query. Set OPEN_WEBUI_TEST_USER_MAIL and OPEN_WEBUI_TEST_USER_API_KEY."
+            )
+
+        # Create temporary test files with different auth permissions
+        temp_files = []
+        file_contents = [
+            "This document contains information about apples and fruits.",
+            "This document is about bananas and tropical fruits.",
+            "This document discusses cars and vehicles, not related to fruits.",
+            "This document talks about various fruits including oranges and grapes.",
+        ]
+
+        # Different auth permissions to test filtering
+        permissions = [
+            ItemPermissions(users=["user1", "user2"], groups=["group1"]),  # File 1
+            ItemPermissions(
+                users=["user3", test_user_mail], groups=["group1"]
+            ),  # File 2
+            ItemPermissions(users=["user1"], groups=["group2"]),  # File 3
+            ItemPermissions(users=[test_user_mail], groups=["group3"]),  # File 4
+        ]
+
+        metadatas = []
+
+        try:
+            # Create test files with different content and permissions
+            for i, content in enumerate(file_contents):
+                with tempfile.NamedTemporaryFile(
+                    suffix=".txt", mode="w", delete=False
+                ) as temp:
+                    temp.write(content)
+                    temp_files.append(temp.name)
+
+                    # Create metadata with different auth permissions
+                    meta = ExtraMetadata(
+                        auth=permissions[i],
+                        metadata=ItemMetadata(
+                            title=f"Test Document {i}",
+                            url=f"https://example.com/doc/{i}",
+                            date=f"2023-07-{i+1:02d}T12:00:00Z",
+                            source="query_test",
+                        ),
+                    )
+                    metadatas.append(meta)
+
+            # Add files to the knowledge base
+            results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=temp_files,
+                metadata=metadatas,
+            )
+
+            assert all(
+                result["success"] for result in results
+            ), "Failed to add test files for query test"
+
+            # Query the knowledge base for "fruits"
+            query_results = await knowledge_manager.query_knowledge(
+                knowledge_ids=[knowledge_base_id],
+                query="What fruits are mentioned?",
+                top_k=5,
+                as_user=False,
+            )
+
+            query_results = query_results.get("documents", [])
+            # Verify we got results
+            assert len(query_results) > 0, "Expected query results but got none"
+
+            documents = query_results[0]
+            assert len(documents) == len(
+                file_contents
+            ), "Expected four documents in query results"
+
+            if os.getenv("OPEN_WEBUI_TEST_USER_MAIL") and os.getenv(
+                "OPEN_WEBUI_TEST_USER_API_KEY"
+            ):
+                # Now only get the results that the user should see
+                test_user_mail = os.getenv("OPEN_WEBUI_TEST_USER_MAIL")
+
+                query_results = await knowledge_manager.query_knowledge(
+                    knowledge_ids=[knowledge_base_id],
+                    query="What fruits are mentioned?",
+                    top_k=5,
+                    as_user=True,
+                )
+                query_results = query_results.get("documents", [])[0]
+
+                # Verify we got results
+                assert len(query_results) == 2, "Expected query results but got none"
+
+                for doc in query_results:
+                    assert doc in (
+                        file_contents[1],
+                        file_contents[3],
+                    ), "Expected to see only the second and fourth file content"
+            else:
+                # If no test user is set, we can't test the user-specific query
+                logging.warning(
+                    "Skipping user-specific query test as no test user is set."
+                )
+                pytest.fail(
+                    "Test user not set in environment variables. Cannot test user-specific query."
+                )
+
+        finally:
+            # Get file IDs for cleanup
+            files = await knowledge_manager._retrieve_files_in_knowledge(
+                knowledge_base_id
+            )
+            file_ids = []
+            for file in files:
+                filename = file.get("filename")
+                if any(Path(temp_file).name == filename for temp_file in temp_files):
+                    file_ids.append(file.get("id"))
+
+            # Clean up - remove the added files
+            for file_id in file_ids:
+                await knowledge_manager.remove_files(
+                    knowledge_id=knowledge_base_id, file_ids=[file_id]
+                )
+
+            # Clean up temporary files
+            for temp_file in temp_files:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
