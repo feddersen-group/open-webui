@@ -2444,6 +2444,7 @@ async def query_collection_handler(
                     if form_data.enable_enriched_texts is not None
                     else request.app.state.config.ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS
                 ),
+                user=user,
             )
         else:
             return await query_collection(
@@ -2453,6 +2454,7 @@ async def query_collection_handler(
                     query, prefix=prefix, user=user
                 ),
                 k=form_data.k if form_data.k else request.app.state.config.TOP_K,
+                user=user,
             )
 
     except Exception as e:
