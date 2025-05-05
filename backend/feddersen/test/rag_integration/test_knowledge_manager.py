@@ -472,10 +472,6 @@ class TestKnowledgeManager:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
 
-
-class TestKnowledgeManagerQuery:
-    """Test querying knowledge bases."""
-
     @pytest.mark.asyncio
     async def test_query_knowledge(
         self, knowledge_manager: KnowledgeManager, knowledge_base_id: str
