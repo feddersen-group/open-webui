@@ -561,3 +561,58 @@ class KnowledgeManager:
 
             knowledge_data = await response.json()
             return knowledge_data.get("files", [])
+
+    async def query_knowledge(
+        self,
+        knowledge_ids: list[str],
+        query: str,
+        top_k: int = 5,
+        as_user: bool = False,
+    ) -> Dict:
+        """
+        Query a knowledge base.
+
+        Parameters:
+        -----------
+        knowledge_id : list[str]
+            ID of the knowledge bases
+        query : str
+            Query string
+        top_k : int, optional
+            Number of top results to return (default is 5)
+        filter : Dict, optional
+            Filter for the query
+        as_user : bool, optional
+            If True, use the user API key for authentication (of the user with only role 'test', not admin)
+
+        Returns:
+        --------
+        Dict
+            Query results
+        """
+        session = await self._get_session()
+
+        headers = self.headers.copy()
+        if as_user and os.getenv("OPEN_WEBUI_TEST_USER_API_KEY"):
+            headers = {
+                "Authorization": f"Bearer {os.getenv('OPEN_WEBUI_TEST_USER_API_KEY')}"
+            }
+
+        async with session.post(
+            f"{self.base_url}/retrieval/query/collection",
+            json={
+                "collection_names": knowledge_ids,
+                "query": query,
+                "k": top_k,
+            },
+            headers=headers,
+        ) as response:
+            if response.status != 200:
+                response_text = await response.text()
+                self.logger.error(
+                    f"Failed to query knowledge base, response: {response_text}"
+                )
+                return []
+
+            response = await response.json()
+            return response

@@ -2247,6 +2247,7 @@ def query_collection_handler(
                     if form_data.hybrid_bm25_weight
                     else request.app.state.config.HYBRID_BM25_WEIGHT
                 ),
+                user=user,
             )
         else:
             return query_collection(
@@ -2256,6 +2257,7 @@ def query_collection_handler(
                     query, prefix=prefix, user=user
                 ),
                 k=form_data.k if form_data.k else request.app.state.config.TOP_K,
+                user=user,
             )
 
     except Exception as e:
