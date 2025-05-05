@@ -557,9 +557,6 @@ class TestKnowledgeManager:
             if os.getenv("OPEN_WEBUI_TEST_USER_MAIL") and os.getenv(
                 "OPEN_WEBUI_TEST_USER_API_KEY"
             ):
-                # Now only get the results that the user should see
-                test_user_mail = os.getenv("OPEN_WEBUI_TEST_USER_MAIL")
-
                 query_results = await knowledge_manager.query_knowledge(
                     knowledge_ids=[knowledge_base_id],
                     query="What fruits are mentioned?",
