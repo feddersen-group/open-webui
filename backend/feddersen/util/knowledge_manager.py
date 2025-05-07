@@ -4,11 +4,40 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from open_webui.models.knowledge import KnowledgeResponse, FileMetadataResponse
-
 import aiohttp
 from feddersen.models import ExtraMetadata, ItemMetadata
 from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
+from pydantic import BaseModel, ConfigDict
+
+
+## Copies from openwebui, otherwise we have to install the whole openwebui requirements
+class KnowledgeModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+
+    name: str
+    description: str
+
+    data: Optional[dict] = None
+    meta: Optional[dict] = None
+
+    access_control: Optional[dict] = None
+
+    created_at: int  # timestamp in epoch
+    updated_at: int  # timestamp in epoch
+
+
+class FileMetadataResponse(BaseModel):
+    id: str
+    meta: dict
+    created_at: int  # timestamp in epoch
+    updated_at: int  # timestamp in epoch
+
+
+class KnowledgeResponse(KnowledgeModel):
+    files: Optional[list[FileMetadataResponse | dict]] = None
 
 
 class KnowledgeManager:
