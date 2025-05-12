@@ -155,14 +155,6 @@
 						localStorage.getItem(`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`)
 					);
 
-<<<<<<< HEAD
-					prompt = input.prompt;
-					files = input.files;
-					selectedToolIds = input.selectedToolIds;
-					webSearchEnabled = input.webSearchEnabled;
-					imageGenerationEnabled = input.imageGenerationEnabled;
-					codeInterpreterEnabled = input.codeInterpreterEnabled;
-=======
 					if (!$temporaryChatEnabled) {
 						prompt = input.prompt;
 						files = input.files;
@@ -171,7 +163,6 @@
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 					}
->>>>>>> upstream/main
 				} catch (e) {}
 			}
 
@@ -430,8 +421,6 @@
 		}
 
 		if (localStorage.getItem(`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`)) {
-<<<<<<< HEAD
-=======
 			prompt = '';
 			files = [];
 			selectedToolIds = [];
@@ -439,28 +428,10 @@
 			imageGenerationEnabled = false;
 			codeInterpreterEnabled = false;
 
->>>>>>> upstream/main
 			try {
 				const input = JSON.parse(
 					localStorage.getItem(`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`)
 				);
-<<<<<<< HEAD
-				console.log('chat-input', input);
-				prompt = input.prompt;
-				files = input.files;
-				selectedToolIds = input.selectedToolIds;
-				webSearchEnabled = input.webSearchEnabled;
-				imageGenerationEnabled = input.imageGenerationEnabled;
-				codeInterpreterEnabled = input.codeInterpreterEnabled;
-			} catch (e) {
-				prompt = '';
-				files = [];
-				selectedToolIds = [];
-				webSearchEnabled = false;
-				imageGenerationEnabled = false;
-				codeInterpreterEnabled = false;
-			}
-=======
 
 				if (!$temporaryChatEnabled) {
 					prompt = input.prompt;
@@ -476,7 +447,6 @@
 		if (!chatIdProp) {
 			loading = false;
 			await tick();
->>>>>>> upstream/main
 		}
 
 		loading = false;
