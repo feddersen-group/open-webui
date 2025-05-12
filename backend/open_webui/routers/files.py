@@ -156,6 +156,7 @@ def upload_file(
                         "audio/ogg",
                         "audio/x-m4a",
                         "audio/webm",
+                        "video/webm",
                     )
                 ):
                     file_path = Storage.get_file(file_path)
@@ -173,7 +174,6 @@ def upload_file(
                     "video/mp4",
                     "video/ogg",
                     "video/quicktime",
-                    "video/webm",
                 ]:
                     process_file(request, ProcessFileForm(file_id=id), user=user)
 
