@@ -309,14 +309,11 @@
 
 		notificationSound = $settings?.notificationSound ?? true;
 		notificationSoundAlways = $settings?.notificationSoundAlways ?? false;
-<<<<<<< HEAD
-=======
 
 		iframeSandboxAllowSameOrigin = $settings?.iframeSandboxAllowSameOrigin ?? false;
 		iframeSandboxAllowForms = $settings?.iframeSandboxAllowForms ?? false;
 
 		stylizedPdfExport = $settings?.stylizedPdfExport ?? true;
->>>>>>> upstream/main
 
 		hapticFeedback = $settings.hapticFeedback ?? false;
 		ctrlEnterToSend = $settings.ctrlEnterToSend ?? false;
