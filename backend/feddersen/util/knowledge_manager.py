@@ -5,7 +5,39 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from feddersen.models import ExtraMetadata
+from feddersen.models import ExtraMetadata, ItemMetadata
+from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
+from pydantic import BaseModel, ConfigDict
+
+
+## Copies from openwebui, otherwise we have to install the whole openwebui requirements
+class KnowledgeModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+
+    name: str
+    description: str
+
+    data: Optional[dict] = None
+    meta: Optional[dict] = None
+
+    access_control: Optional[dict] = None
+
+    created_at: int  # timestamp in epoch
+    updated_at: int  # timestamp in epoch
+
+
+class FileMetadataResponse(BaseModel):
+    id: str
+    meta: dict
+    created_at: int  # timestamp in epoch
+    updated_at: int  # timestamp in epoch
+
+
+class KnowledgeResponse(KnowledgeModel):
+    files: Optional[list[FileMetadataResponse | dict]] = None
 
 
 class KnowledgeManager:
@@ -156,18 +188,28 @@ class KnowledgeManager:
         # Process files in batches
         results = []
 
-        # Remove files that are already in the knowledge base. THE CHECK IS BASED ON THE FILENAME
+        # Remove files that are already in the knowledge base. THE CHECK IS BASED ON THE itemURL!
         knowledge_files = await self._retrieve_files_in_knowledge(knowledge_id)
-        existing_files = {kf.get("filename") for kf in knowledge_files}
+        existing_files = []
+        for file in knowledge_files:
+            meta_data = file.meta
+            if meta_data and meta_data.get(EXTRA_MIDDLEWARE_METADATA_KEY):
+                extra_meta = meta_data.get(EXTRA_MIDDLEWARE_METADATA_KEY)
+                if extra_meta:
+                    item_meta = ExtraMetadata.model_validate(extra_meta)
+                    existing_files.append(item_meta.metadata.url)
+        existing_files = set(existing_files)
+
         file_paths_to_upload = []
         metadata_to_upload = []
         if isinstance(metadata, ExtraMetadata):
             metadata = [metadata] * len(file_paths)
 
-        for i, file_path in enumerate(file_paths):
-            if Path(file_path).name not in existing_files:
+        for file_path, meta_data in zip(file_paths, metadata):
+            item_meta = meta_data.metadata
+            if item_meta and item_meta.url and item_meta.url not in existing_files:
                 file_paths_to_upload.append(file_path)
-                metadata_to_upload.append(metadata[i] if metadata else None)
+                metadata_to_upload.append(meta_data)
             else:
                 self.logger.warning(
                     f"File already exists in knowledge base: {file_path}, skipping."
@@ -232,12 +274,58 @@ class KnowledgeManager:
 
         return results
 
+    @staticmethod
+    def _get_item_url_of_file(file_response: FileMetadataResponse) -> str:
+        """
+        Get the item URL of a file from its metadata response.
+
+        Parameters:
+        -----------
+        file_response : FileMetadataResponse
+            The file metadata response
+
+        Returns:
+        --------
+        str
+            The item URL of the file
+        """
+        if file_response and file_response.meta:
+            extra_meta = file_response.meta.get(EXTRA_MIDDLEWARE_METADATA_KEY)
+            if extra_meta:
+                extra_meta = ExtraMetadata.model_validate(extra_meta)
+                if url := extra_meta.metadata.url:
+                    return url
+        return None
+
+    def _get_file_meta_if_exists_in_knowledge(
+        self, knowledge_files: List[FileMetadataResponse], file_metadata: ItemMetadata
+    ) -> Optional[FileMetadataResponse]:
+        """
+        Check if a file exists in the knowledge base.
+
+        Parameters:
+        -----------
+        knowledge_files : KnowledgeResponse
+            The knowledge base response containing files
+        file_metadata : ExtraMetadata
+            Metadata of the file to check
+
+        Returns:
+        --------
+        Optional[str]
+            The file ID if the file exists, else None
+        """
+        for kf in knowledge_files:
+            kf_file_url = self._get_item_url_of_file(kf)
+            if kf_file_url and kf_file_url == file_metadata.url:
+                return kf
+        return None
+
     async def update_files(
         self,
         knowledge_id: str,
         file_paths: List[str],
-        file_names: List[str] = None,
-        metadata: List[ExtraMetadata] = None,
+        metadata: List[ExtraMetadata],
     ) -> List[Dict]:
         """
         Update files in a knowledge base by removing and adding them again.
@@ -259,37 +347,24 @@ class KnowledgeManager:
         List[Dict]
             Results for each file update operation
         """
-        if not file_names:
-            file_names = [Path(path).name for path in file_paths]
-
-        if len(file_names) != len(file_paths):
-            raise ValueError("file_names and file_paths must have the same length")
-
-        if metadata is None:
-            metadata = [None] * len(file_paths)
-        elif len(metadata) != len(file_paths):
-            raise ValueError("metadata must have the same length as file_paths")
-
         results = []
 
         # Get all files in knowledge base
         knowledge_files = await self._retrieve_files_in_knowledge(knowledge_id)
 
-        for i, (file_path, file_name, file_metadata) in enumerate(
-            zip(file_paths, file_names, metadata)
-        ):
+        for i, (file_path, file_metadata) in enumerate(zip(file_paths, metadata)):
             # Find file ID by name
-            file_id = None
-            for kf in knowledge_files:
-                if kf.get("filename") == file_name:
-                    file_id = kf.get("id")
-                    break
+            file = self._get_file_meta_if_exists_in_knowledge(
+                knowledge_files, file_metadata.metadata
+            )
+            file_id = file.id if file else None
+            file_item_url = self._get_item_url_of_file(file)
 
             if not file_id:
-                self.logger.warning(f"File not found: {file_name}")
+                self.logger.warning(f"File not found: {file_item_url}")
                 results.append(
                     {
-                        "file_name": file_name,
+                        "file_name": file_item_url,
                         "success": False,
                         "error": "File not found",
                     }
@@ -304,12 +379,12 @@ class KnowledgeManager:
                     file_path, file_metadata, knowledge_id
                 )
                 results.append(
-                    {"file_name": file_name, "success": True, "result": add_result}
+                    {"file_name": file_item_url, "success": True, "result": add_result}
                 )
             else:
                 results.append(
                     {
-                        "file_name": file_name,
+                        "file_name": file_item_url,
                         "success": False,
                         "error": "Failed to remove file",
                     }
@@ -534,7 +609,9 @@ class KnowledgeManager:
 
                 return file_id
 
-    async def _retrieve_files_in_knowledge(self, knowledge_id: str) -> List[Dict]:
+    async def _retrieve_files_in_knowledge(
+        self, knowledge_id: str
+    ) -> List[FileMetadataResponse]:
         """
         Retrieve all files in a knowledge base.
 
@@ -560,7 +637,8 @@ class KnowledgeManager:
                 return []
 
             knowledge_data = await response.json()
-            return knowledge_data.get("files", [])
+            knowledge_data = KnowledgeResponse.model_validate(knowledge_data)
+            return knowledge_data.files
 
     async def query_knowledge(
         self,
