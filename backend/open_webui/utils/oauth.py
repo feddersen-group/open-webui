@@ -55,6 +55,9 @@ from open_webui.config import (
     OAUTH_UPDATE_PICTURE_ON_LOGIN,
     WEBHOOK_URL,
     JWT_EXPIRES_IN,
+    MICROSOFT_CLIENT_ID,
+    MICROSOFT_CLIENT_SECRET,
+    MICROSOFT_CLIENT_TENANT_ID,
     AppConfig,
 )
 from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
@@ -1015,9 +1018,10 @@ class OAuthManager:
 
         return role
 
-    def update_user_groups(self, user, user_data, default_permissions):
+    async def update_user_groups(self, user, user_data, default_permissions):
         log.debug("Running OAUTH Group management")
-        oauth_claim = auth_manager_config.OAUTH_GROUPS_CLAIM
+        # Use the Graph API to get the user's groups
+        from feddersen.entra.groups import UserGroupsRetriever
 
         try:
             blocked_groups = json.loads(auth_manager_config.OAUTH_BLOCKED_GROUPS)
@@ -1025,24 +1029,14 @@ class OAuthManager:
             log.exception(f"Error loading OAUTH_BLOCKED_GROUPS: {e}")
             blocked_groups = []
 
-        user_oauth_groups = []
-        # Nested claim search for groups claim
-        if oauth_claim:
-            claim_data = user_data
-            nested_claims = oauth_claim.split(".")
-            for nested_claim in nested_claims:
-                claim_data = claim_data.get(nested_claim, {})
-
-            if isinstance(claim_data, list):
-                user_oauth_groups = claim_data
-            elif isinstance(claim_data, str):
-                # Split by the configured separator if present
-                if OAUTH_GROUPS_SEPARATOR in claim_data:
-                    user_oauth_groups = claim_data.split(OAUTH_GROUPS_SEPARATOR)
-                else:
-                    user_oauth_groups = [claim_data]
-            else:
-                user_oauth_groups = []
+        retriever = UserGroupsRetriever(
+            sso_app_tenant_id=MICROSOFT_CLIENT_TENANT_ID,
+            sso_app_client_id=MICROSOFT_CLIENT_ID,
+            sso_app_client_secret=MICROSOFT_CLIENT_SECRET,
+        )
+        user_oauth_groups = await retriever.aget_user_groups(
+            user.email, group_prefix="-"
+        )
 
         user_current_groups: list[GroupModel] = Groups.get_groups_by_member_id(user.id)
         all_available_groups: list[GroupModel] = Groups.get_groups()
@@ -1092,7 +1086,6 @@ class OAuthManager:
                 all_available_groups = Groups.get_groups()
                 log.debug("Refreshed list of all available groups after creation.")
 
-        log.debug(f"Oauth Groups claim: {oauth_claim}")
         log.debug(f"User oauth groups: {user_oauth_groups}")
         log.debug(f"User's current groups: {[g.name for g in user_current_groups]}")
         log.debug(
