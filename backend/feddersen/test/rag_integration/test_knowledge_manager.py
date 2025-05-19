@@ -140,12 +140,13 @@ class TestKnowledgeManager:
     async def test_add_files(
         self, knowledge_manager, knowledge_base_id, test_files, test_metadata
     ):
-        """Test adding files to a knowledge base."""
-        results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[test_metadata],
-        )
+        async with knowledge_manager:
+            """Test adding files to a knowledge base."""
+            results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"]],
+                metadata=[test_metadata],
+            )
 
         assert len(results) == 1, "Expected one result for one file"
         assert results[0]["success"], f"Failed to add file: {results[0].get('error')}"
@@ -154,26 +155,29 @@ class TestKnowledgeManager:
     async def test_add_files_only_once(
         self, knowledge_manager, knowledge_base_id, test_files, test_metadata, caplog
     ):
-        """Test adding files to a knowledge base."""
-        results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[test_metadata],
-        )
-
-        assert len(results) == 1, "Expected one result for one file"
-        assert results[0]["success"], f"Failed to add file: {results[0].get('error')}"
-
-        with caplog.at_level(logging.WARNING):
+        async with knowledge_manager:
+            """Test adding files to a knowledge base."""
             results = await knowledge_manager.add_files(
                 knowledge_id=knowledge_base_id,
                 file_paths=[test_files["text_file"]],
                 metadata=[test_metadata],
             )
 
-            assert caplog.records[-1].levelname == "WARNING"
+            assert len(results) == 1, "Expected one result for one file"
+            assert results[0][
+                "success"
+            ], f"Failed to add file: {results[0].get('error')}"
 
-        assert len(results) == 0, "Expected no result for duplicate file upload"
+            with caplog.at_level(logging.WARNING):
+                results = await knowledge_manager.add_files(
+                    knowledge_id=knowledge_base_id,
+                    file_paths=[test_files["text_file"]],
+                    metadata=[test_metadata],
+                )
+
+                assert caplog.records[-1].levelname == "WARNING"
+
+            assert len(results) == 0, "Expected no result for duplicate file upload"
 
     @pytest.mark.asyncio
     async def test_add_multiple_files(
@@ -191,22 +195,29 @@ class TestKnowledgeManager:
             ),
         )
 
-        # Test that files are processed in batches (batch_size=3 in fixture)
-        results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"], test_files["pdf_file"]],
-            metadata=[test_metadata, second_metadata],
-        )
+        async with knowledge_manager:
+            # Test that files are processed in batches (batch_size=3 in fixture)
+            results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"], test_files["pdf_file"]],
+                metadata=[test_metadata, second_metadata],
+            )
 
-        assert len(results) == 2, "Expected two results for two files"
-        assert all(result["success"] for result in results), "Failed to add all files"
+            assert len(results) == 2, "Expected two results for two files"
+            assert all(
+                result["success"] for result in results
+            ), "Failed to add all files"
 
-        # Verify files were added by retrieving them
-        files = await knowledge_manager._retrieve_files_in_knowledge(knowledge_base_id)
-        assert len(files) >= 2, "Expected at least two files in knowledge base"
+            # Verify files were added by retrieving them
+            files = await knowledge_manager._retrieve_files_in_knowledge(
+                knowledge_base_id
+            )
+            assert len(files) >= 2, "Expected at least two files in knowledge base"
 
     @pytest.mark.asyncio
-    async def test_batch_processing(self, knowledge_manager, knowledge_base_id):
+    async def test_batch_processing(
+        self, knowledge_manager: KnowledgeManager, knowledge_base_id
+    ):
         """Test batch processing of multiple files."""
         # Create several temporary files to test batch processing
         temp_files = []
@@ -233,41 +244,36 @@ class TestKnowledgeManager:
                     )
                     temp_metadata.append(meta)
 
-            # Add files which should trigger multiple batches (with batch_size=3)
-            results = await knowledge_manager.add_files(
-                knowledge_id=knowledge_base_id,
-                file_paths=temp_files,
-                metadata=temp_metadata,
-            )
+            async with knowledge_manager:
 
-            # Verify all files were processed
-            assert len(results) == 7, "Expected seven results for seven files"
-            assert all(
-                result["success"] for result in results
-            ), "Failed to add all files in batch"
+                # Add files which should trigger multiple batches (with batch_size=3)
+                results = await knowledge_manager.add_files(
+                    knowledge_id=knowledge_base_id,
+                    file_paths=temp_files,
+                    metadata=temp_metadata,
+                )
 
-            # Verify files were added by retrieving them
-            files = await knowledge_manager._retrieve_files_in_knowledge(
-                knowledge_base_id
-            )
-            assert len(files) >= 7, "Expected at least seven files in knowledge base"
+                # Verify all files were processed
+                assert len(results) == 7, "Expected seven results for seven files"
+                assert all(
+                    result["success"] for result in results
+                ), "Failed to add all files in batch"
 
-            # Get all file IDs for cleanup
-            file_ids = []
-            for file in files:
-                filename = file.get("filename")
-                if any(Path(temp_file).name == filename for temp_file in temp_files):
-                    file_ids.append(file.get("id"))
+                # Verify files were added by retrieving them
+                files = await knowledge_manager._retrieve_files_in_knowledge(
+                    knowledge_base_id
+                )
+                assert (
+                    len(files) >= 7
+                ), "Expected at least seven files in knowledge base"
 
-            # Clean up - remove the added files
-            if file_ids:
+                # Clean up - remove the added files
                 remove_results = await knowledge_manager.remove_files(
-                    knowledge_id=knowledge_base_id, file_ids=file_ids
+                    knowledge_id=knowledge_base_id, file_ids=[file.id for file in files]
                 )
                 assert all(
                     result["success"] for result in remove_results
                 ), "Failed to clean up test files"
-
         finally:
             # Clean up temporary files
             for temp_file in temp_files:
@@ -279,22 +285,23 @@ class TestKnowledgeManager:
         self, knowledge_manager, knowledge_base_id, test_files, test_metadata
     ):
         """Test removing files from a knowledge base."""
-        # First add a file
-        add_results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[test_metadata],
-        )
+        async with knowledge_manager:
+            # First add a file
+            add_results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"]],
+                metadata=[test_metadata],
+            )
 
-        assert add_results[0]["success"], "Failed to add file for removal test"
+            assert add_results[0]["success"], "Failed to add file for removal test"
 
-        # Get file ID from the result
-        file_id = add_results[0]["result"]["id"]
+            # Get file ID from the result
+            file_id = add_results[0]["result"]["id"]
 
-        # Now remove the file
-        remove_results = await knowledge_manager.remove_files(
-            knowledge_id=knowledge_base_id, file_ids=[file_id]
-        )
+            # Now remove the file
+            remove_results = await knowledge_manager.remove_files(
+                knowledge_id=knowledge_base_id, file_ids=[file_id]
+            )
 
         assert len(remove_results) == 1, "Expected one result for one file removal"
         assert remove_results[0][
@@ -306,171 +313,177 @@ class TestKnowledgeManager:
         self, knowledge_manager, knowledge_base_id, test_files, test_metadata
     ):
         """Test updating files in a knowledge base."""
-        # First add a file
-        add_results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[test_metadata],
-        )
+        async with knowledge_manager:
+            # First add a file
+            add_results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"]],
+                metadata=[test_metadata],
+            )
 
-        assert add_results[0]["success"], "Failed to add file for update test"
+            assert add_results[0]["success"], "Failed to add file for update test"
 
-        # Wait a moment to ensure the file is processed
-        await asyncio.sleep(1)
+            # Wait a moment to ensure the file is processed
+            await asyncio.sleep(1)
 
-        # Now update the file with new metadata
-        updated_metadata = ExtraMetadata(
-            auth=ItemPermissions(users=["updated_user"], groups=["updated_group"]),
-            metadata=ItemMetadata(
-                title="Updated Test Document",
-                url="https://example.com/updated",
-                date="2023-07-02T12:00:00Z",
-                source="updated_integration_test",
-            ),
-        )
+            # Now update the file with new metadata
+            updated_metadata = ExtraMetadata(
+                auth=ItemPermissions(users=["updated_user"], groups=["updated_group"]),
+                metadata=ItemMetadata(
+                    title="Updated Test Document",
+                    url=test_metadata.metadata.url,
+                    date="2023-07-02T12:00:00Z",
+                    source="updated_integration_test",
+                ),
+            )
 
-        update_results = await knowledge_manager.update_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[updated_metadata],
-        )
+            update_results = await knowledge_manager.update_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"]],
+                metadata=[updated_metadata],
+            )
 
-        assert len(update_results) == 1, "Expected one result for one file update"
-        assert update_results[0][
-            "success"
-        ], f"Failed to update file: {update_results[0].get('error')}"
+            assert len(update_results) == 1, "Expected one result for one file update"
+            assert update_results[0][
+                "success"
+            ], f"Failed to update file: {update_results[0].get('error')}"
 
     @pytest.mark.asyncio
     async def test_retrieve_files_in_knowledge(
-        self, knowledge_manager, knowledge_base_id, test_files, test_metadata
+        self,
+        knowledge_manager: KnowledgeManager,
+        knowledge_base_id,
+        test_files,
+        test_metadata,
     ):
         """Test retrieving files in a knowledge base using the internal method."""
-        # First add a file
-        add_results = await knowledge_manager.add_files(
-            knowledge_id=knowledge_base_id,
-            file_paths=[test_files["text_file"]],
-            metadata=[test_metadata],
-        )
+        async with knowledge_manager:
+            # First add a file
+            add_results = await knowledge_manager.add_files(
+                knowledge_id=knowledge_base_id,
+                file_paths=[test_files["text_file"]],
+                metadata=[test_metadata],
+            )
 
-        assert add_results[0]["success"], "Failed to add file for retrieval test"
+            assert add_results[0]["success"], "Failed to add file for retrieval test"
 
-        # Retrieve files
-        files = await knowledge_manager._retrieve_files_in_knowledge(knowledge_base_id)
+            # Retrieve files
+            files = await knowledge_manager._retrieve_files_in_knowledge(
+                knowledge_base_id
+            )
 
-        assert len(files) >= 1, "Expected at least one file in knowledge base"
+            assert len(files) >= 1, "Expected at least one file in knowledge base"
 
-        # Check if the file we added is in the list
-        file_found = any(
-            file["filename"] == Path(test_files["text_file"]).name for file in files
-        )
-        assert file_found, "Added file not found in knowledge base"
+            # Check if the file we added is in the list
+            for uploaded_file, received_file in zip(add_results, files):
+                assert (
+                    uploaded_file["result"]["id"] == received_file.id
+                ), "Added file not found in knowledge base"
 
     @pytest.mark.asyncio
     async def test_full_lifecycle(self, knowledge_manager):
         """Test the full lifecycle of a knowledge base: create, add, update, remove, delete."""
         # Create a knowledge base
         kb_name = f"test-kb-lifecycle-{os.urandom(4).hex()}"
-        kb_id = await knowledge_manager.create_knowledge_if_not_exists(
-            name=kb_name, description="Test knowledge base lifecycle"
-        )
 
-        assert kb_id is not None, "Failed to create knowledge base"
-
-        # Create multiple temporary files to test batch processing in lifecycle
-        temp_files = []
-        temp_metadata = []
-
-        try:
-            # Create 4 temporary files (more than default batch size)
-            for i in range(4):
-                with tempfile.NamedTemporaryFile(
-                    suffix=".txt", mode="w", delete=False
-                ) as temp:
-                    temp.write(
-                        f"This is test file {i} for lifecycle batch processing test."
-                    )
-                    temp_files.append(temp.name)
-
-                    # Create unique metadata for each file
-                    meta = ExtraMetadata(
-                        auth=ItemPermissions(
-                            users=[f"lifecycle_user{i}"], groups=[f"lifecycle_group{i}"]
-                        ),
-                        metadata=ItemMetadata(
-                            title=f"Lifecycle Test {i}",
-                            url=f"https://example.com/lifecycle/{i}",
-                            date=f"2023-07-{i + 1:02d}T12:00:00Z",
-                            source="lifecycle_test",
-                        ),
-                    )
-                    temp_metadata.append(meta)
-
-            # Add files in batch
-            add_results = await knowledge_manager.add_files(
-                knowledge_id=kb_id, file_paths=temp_files, metadata=temp_metadata
+        async with knowledge_manager:
+            kb_id = await knowledge_manager.create_knowledge_if_not_exists(
+                name=kb_name, description="Test knowledge base lifecycle"
             )
 
-            assert len(add_results) == 4, "Expected four results for four files"
-            assert all(
-                result["success"] for result in add_results
-            ), "Failed to add files in lifecycle test"
+            assert kb_id is not None, "Failed to create knowledge base"
 
-            # Wait to ensure files are processed
-            await asyncio.sleep(1)
+            # Create multiple temporary files to test batch processing in lifecycle
+            temp_files = []
+            temp_metadata = []
 
-            # Update one of the files
-            updated_metadata = ExtraMetadata(
-                auth=ItemPermissions(
-                    users=["updated_lifecycle_user"], groups=["updated_lifecycle_group"]
-                ),
-                metadata=ItemMetadata(
-                    title="Updated Lifecycle Test",
-                    url="https://example.com/updated_lifecycle",
-                    date="2023-07-04T12:00:00Z",
-                    source="updated_lifecycle_test",
-                ),
-            )
+            try:
+                # Create 4 temporary files (more than default batch size)
+                for i in range(4):
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".txt", mode="w", delete=False
+                    ) as temp:
+                        temp.write(
+                            f"This is test file {i} for lifecycle batch processing test."
+                        )
+                        temp_files.append(temp.name)
 
-            update_results = await knowledge_manager.update_files(
-                knowledge_id=kb_id,
-                file_paths=[temp_files[0]],
-                metadata=[updated_metadata],
-            )
+                        # Create unique metadata for each file
+                        meta = ExtraMetadata(
+                            auth=ItemPermissions(
+                                users=[f"lifecycle_user{i}"],
+                                groups=[f"lifecycle_group{i}"],
+                            ),
+                            metadata=ItemMetadata(
+                                title=f"Lifecycle Test {i}",
+                                url=f"https://example.com/lifecycle/{i}",
+                                date=f"2023-07-{i + 1:02d}T12:00:00Z",
+                                source="lifecycle_test",
+                            ),
+                        )
+                        temp_metadata.append(meta)
 
-            assert update_results[0][
-                "success"
-            ], "Failed to update file in lifecycle test"
-
-            # Retrieve files to get file IDs
-            files = await knowledge_manager._retrieve_files_in_knowledge(kb_id)
-            assert len(files) >= 4, "Expected at least four files in knowledge base"
-
-            file_ids = []
-            for file in files:
-                filename = file.get("filename")
-                if any(Path(temp_file).name == filename for temp_file in temp_files):
-                    file_ids.append(file.get("id"))
-
-            # Remove the files
-            for file_id in file_ids:
-                remove_results = await knowledge_manager.remove_files(
-                    knowledge_id=kb_id, file_ids=[file_id]
+                # Add files in batch
+                add_results = await knowledge_manager.add_files(
+                    knowledge_id=kb_id, file_paths=temp_files, metadata=temp_metadata
                 )
-                assert remove_results[0][
+
+                assert len(add_results) == 4, "Expected four results for four files"
+                assert all(
+                    result["success"] for result in add_results
+                ), "Failed to add files in lifecycle test"
+
+                # Wait to ensure files are processed
+                await asyncio.sleep(1)
+
+                # Update the file "0". The identification is the file url!
+                updated_metadata = ExtraMetadata(
+                    auth=ItemPermissions(
+                        users=["updated_lifecycle_user"],
+                        groups=["updated_lifecycle_group"],
+                    ),
+                    metadata=ItemMetadata(
+                        title="Updated Lifecycle Test",
+                        url="https://example.com/lifecycle/0",
+                        date="2023-07-04T12:00:00Z",
+                        source="updated_lifecycle_test",
+                    ),
+                )
+
+                update_results = await knowledge_manager.update_files(
+                    knowledge_id=kb_id,
+                    file_paths=[temp_files[0]],
+                    metadata=[updated_metadata],
+                )
+
+                assert update_results[0][
                     "success"
-                ], f"Failed to remove file {file_id} in lifecycle test"
+                ], "Failed to update file in lifecycle test"
 
-            # Delete the knowledge base
-            delete_result = await knowledge_manager.delete_knowledge(kb_id)
-            assert delete_result[
-                "success"
-            ], "Failed to delete knowledge base in lifecycle test"
+                # Retrieve files to get file IDs
+                files = await knowledge_manager._retrieve_files_in_knowledge(kb_id)
+                assert len(files) >= 4, "Expected at least four files in knowledge base"
 
-        finally:
-            # Clean up the temporary files
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.unlink(temp_file)
+                # Remove the files
+                for file in files:
+                    remove_results = await knowledge_manager.remove_files(
+                        knowledge_id=kb_id, file_ids=[file.id]
+                    )
+                    assert remove_results[0][
+                        "success"
+                    ], f"Failed to remove file {file.id} in lifecycle test"
+
+                # Delete the knowledge base
+                delete_result = await knowledge_manager.delete_knowledge(kb_id)
+                assert delete_result[
+                    "success"
+                ], "Failed to delete knowledge base in lifecycle test"
+
+            finally:
+                # Clean up the temporary files
+                for temp_file in temp_files:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
 
     @pytest.mark.asyncio
     async def test_query_knowledge(
@@ -505,101 +518,97 @@ class TestKnowledgeManager:
 
         metadatas = []
 
-        try:
-            # Create test files with different content and permissions
-            for i, content in enumerate(file_contents):
-                with tempfile.NamedTemporaryFile(
-                    suffix=".txt", mode="w", delete=False
-                ) as temp:
-                    temp.write(content)
-                    temp_files.append(temp.name)
+        async with knowledge_manager:
+            try:
+                # Create test files with different content and permissions
+                for i, content in enumerate(file_contents):
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".txt", mode="w", delete=False
+                    ) as temp:
+                        temp.write(content)
+                        temp_files.append(temp.name)
 
-                    # Create metadata with different auth permissions
-                    meta = ExtraMetadata(
-                        auth=permissions[i],
-                        metadata=ItemMetadata(
-                            title=f"Test Document {i}",
-                            url=f"https://example.com/doc/{i}",
-                            date=f"2023-07-{i+1:02d}T12:00:00Z",
-                            source="query_test",
-                        ),
-                    )
-                    metadatas.append(meta)
+                        # Create metadata with different auth permissions
+                        meta = ExtraMetadata(
+                            auth=permissions[i],
+                            metadata=ItemMetadata(
+                                title=f"Test Document {i}",
+                                url=f"https://example.com/doc/{i}",
+                                date=f"2023-07-{i+1:02d}T12:00:00Z",
+                                source="query_test",
+                            ),
+                        )
+                        metadatas.append(meta)
 
-            # Add files to the knowledge base
-            results = await knowledge_manager.add_files(
-                knowledge_id=knowledge_base_id,
-                file_paths=temp_files,
-                metadata=metadatas,
-            )
+                # Add files to the knowledge base
+                results = await knowledge_manager.add_files(
+                    knowledge_id=knowledge_base_id,
+                    file_paths=temp_files,
+                    metadata=metadatas,
+                )
 
-            assert all(
-                result["success"] for result in results
-            ), "Failed to add test files for query test"
+                assert all(
+                    result["success"] for result in results
+                ), "Failed to add test files for query test"
 
-            # Query the knowledge base for "fruits"
-            query_results = await knowledge_manager.query_knowledge(
-                knowledge_ids=[knowledge_base_id],
-                query="What fruits are mentioned?",
-                top_k=5,
-                as_user=False,
-            )
-
-            query_results = query_results.get("documents", [])
-            # Verify we got results
-            assert len(query_results) > 0, "Expected query results but got none"
-
-            documents = query_results[0]
-            assert len(documents) == len(
-                file_contents
-            ), "Expected four documents in query results"
-
-            if os.getenv("OPEN_WEBUI_TEST_USER_MAIL") and os.getenv(
-                "OPEN_WEBUI_TEST_USER_API_KEY"
-            ):
+                # Query the knowledge base for "fruits"
                 query_results = await knowledge_manager.query_knowledge(
                     knowledge_ids=[knowledge_base_id],
                     query="What fruits are mentioned?",
                     top_k=5,
-                    as_user=True,
+                    as_user=False,
                 )
-                query_results = query_results.get("documents", [])[0]
 
+                query_results = query_results.get("documents", [])
                 # Verify we got results
-                assert len(query_results) == 2, "Expected query results but got none"
+                assert len(query_results) > 0, "Expected query results but got none"
 
-                for doc in query_results:
-                    assert doc in (
-                        file_contents[1],
-                        file_contents[3],
-                    ), "Expected to see only the second and fourth file content"
-            else:
-                # If no test user is set, we can't test the user-specific query
-                logging.warning(
-                    "Skipping user-specific query test as no test user is set."
+                documents = query_results[0]
+                assert len(documents) == len(
+                    file_contents
+                ), "Expected four documents in query results"
+
+                if os.getenv("OPEN_WEBUI_TEST_USER_MAIL") and os.getenv(
+                    "OPEN_WEBUI_TEST_USER_API_KEY"
+                ):
+                    query_results = await knowledge_manager.query_knowledge(
+                        knowledge_ids=[knowledge_base_id],
+                        query="What fruits are mentioned?",
+                        top_k=5,
+                        as_user=True,
+                    )
+                    query_results = query_results.get("documents", [])[0]
+
+                    # Verify we got results
+                    assert (
+                        len(query_results) == 2
+                    ), "Expected query results but got none"
+
+                    for doc in query_results:
+                        assert doc in (
+                            file_contents[1],
+                            file_contents[3],
+                        ), "Expected to see only the second and fourth file content"
+                else:
+                    # If no test user is set, we can't test the user-specific query
+                    logging.warning(
+                        "Skipping user-specific query test as no test user is set."
+                    )
+                    pytest.fail(
+                        "Test user not set in environment variables. Cannot test user-specific query."
+                    )
+
+            finally:
+                # Get file IDs for cleanup
+                files = await knowledge_manager._retrieve_files_in_knowledge(
+                    knowledge_base_id
                 )
-                pytest.fail(
-                    "Test user not set in environment variables. Cannot test user-specific query."
-                )
-
-        finally:
-            # Get file IDs for cleanup
-            files = await knowledge_manager._retrieve_files_in_knowledge(
-                knowledge_base_id
-            )
-            file_ids = []
-            for file in files:
-                filename = file.get("filename")
-                if any(Path(temp_file).name == filename for temp_file in temp_files):
-                    file_ids.append(file.get("id"))
-
-            # Clean up - remove the added files
-            for file_id in file_ids:
+                # Clean up - remove the added files
                 await knowledge_manager.remove_files(
-                    knowledge_id=knowledge_base_id, file_ids=[file_id]
+                    knowledge_id=knowledge_base_id, file_ids=[file.id for file in files]
                 )
 
-            # Clean up temporary files
-            for temp_file in temp_files:
-                if os.path.exists(temp_file):
-                    os.unlink(temp_file)
+                # Clean up temporary files
+                for temp_file in temp_files:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)

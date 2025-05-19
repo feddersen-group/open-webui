@@ -903,6 +903,7 @@ class OAuthManager:
         log.debug("Running OAUTH Group management")
         # Use the Graph API to get the user's groups
         from feddersen.entra.groups import UserGroupsRetriever
+        from feddersen.config import ENTRA_USER_GROUP_PREFIX
 
         try:
             blocked_groups = json.loads(auth_manager_config.OAUTH_BLOCKED_GROUPS)
@@ -916,7 +917,7 @@ class OAuthManager:
             sso_app_client_secret=MICROSOFT_CLIENT_SECRET,
         )
         user_oauth_groups = await retriever.aget_user_groups(
-            user.email, group_prefix="-"
+            user.email, group_prefix=ENTRA_USER_GROUP_PREFIX
         )
 
         user_current_groups: list[GroupModel] = Groups.get_groups_by_member_id(user.id)
