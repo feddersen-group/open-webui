@@ -568,7 +568,7 @@
 				render: getSuggestionRenderer(MentionList, {
 					i18n,
 					triggerChar: '@',
-					modelSuggestions: true,
+					modelSuggestions: false,
 					userSuggestions
 				})
 			},
