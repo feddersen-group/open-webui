@@ -2,6 +2,7 @@ from open_webui.retrieval.vector.main import VectorDBBase
 from open_webui.retrieval.vector.type import VectorType
 from open_webui.config import VECTOR_DB, ENABLE_QDRANT_MULTITENANCY_MODE
 
+from feddersen.connectors.pgvector.pgvector import FeddersenPGVectorConnector
 
 class Vector:
 
@@ -42,6 +43,10 @@ class Vector:
                 from open_webui.retrieval.vector.dbs.pgvector import PgvectorClient
 
                 return PgvectorClient()
+            case VectorType.PGVECTOR_FEDDERSEN:
+                from open_webui.retrieval.vector.dbs.pgvector import PgvectorClient
+
+                return FeddersenPGVectorConnector()
             case VectorType.ELASTICSEARCH:
                 from open_webui.retrieval.vector.dbs.elasticsearch import (
                     ElasticsearchClient,
