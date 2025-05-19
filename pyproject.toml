@@ -198,3 +198,10 @@ ignore-words-list = 'ans'
 dev = [
     "pytest-asyncio>=1.0.0",
 ]
+[tool.pytest.ini_options]
+markers = [
+    "integration: calls the apis (deselect with '-m \"not integration\"')",
+    "serial",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
