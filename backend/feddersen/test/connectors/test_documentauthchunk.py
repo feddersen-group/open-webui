@@ -4,6 +4,7 @@ import pytest
 from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
 from feddersen.connectors.pgvector.pgvector import DocumentAuthChunk
 
+
 class TestDocumentAuthChunk:
     def test_document_auth_chunk_create(self, mocker):
         # Test data
@@ -51,12 +52,16 @@ class TestDocumentAuthChunk:
 
     def test_prepare_metadata_empty_input(self):
         # Test with None metadata
-        meta, auth = DocumentAuthChunk.prepare_metadata(None, EXTRA_MIDDLEWARE_METADATA_KEY)
+        meta, auth = DocumentAuthChunk.prepare_metadata(
+            None, EXTRA_MIDDLEWARE_METADATA_KEY
+        )
         assert meta == {}
         assert auth == {"groups": [], "users": []}
 
         # Test with empty dict
-        meta, auth = DocumentAuthChunk.prepare_metadata({}, EXTRA_MIDDLEWARE_METADATA_KEY)
+        meta, auth = DocumentAuthChunk.prepare_metadata(
+            {}, EXTRA_MIDDLEWARE_METADATA_KEY
+        )
         assert meta == {}
         assert auth == {"groups": [], "users": []}
 
@@ -100,7 +105,9 @@ class TestDocumentAuthChunk:
         }
 
         # Call method
-        meta, auth = DocumentAuthChunk.prepare_metadata(metadata, EXTRA_MIDDLEWARE_METADATA_KEY)
+        meta, auth = DocumentAuthChunk.prepare_metadata(
+            metadata, EXTRA_MIDDLEWARE_METADATA_KEY
+        )
 
         # Assertions
         assert meta == {
@@ -180,12 +187,12 @@ class TestDocumentAuthChunk:
 
     def test_prepare_metadata_empty_middleware_metadata(self):
         # Test data with empty middleware_metadata
-        metadata = {
-            EXTRA_MIDDLEWARE_METADATA_KEY: '{}'
-        }
+        metadata = {EXTRA_MIDDLEWARE_METADATA_KEY: "{}"}
 
         # Call method
-        meta, auth = DocumentAuthChunk.prepare_metadata(metadata, EXTRA_MIDDLEWARE_METADATA_KEY)
+        meta, auth = DocumentAuthChunk.prepare_metadata(
+            metadata, EXTRA_MIDDLEWARE_METADATA_KEY
+        )
 
         # Assertions
         assert meta == {}

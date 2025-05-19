@@ -8,6 +8,7 @@ from open_webui.config import (
 
 from feddersen.connectors.pgvector.pgvector import FeddersenPGVectorConnector
 
+
 class Vector:
 
     @staticmethod

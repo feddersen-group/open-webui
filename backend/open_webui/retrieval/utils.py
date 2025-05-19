@@ -423,7 +423,7 @@ async def query_collection(
                     collection_name=collection_name,
                     k=k,
                     query_embedding=query_embedding,
-                    user=user
+                    user=user,
                 )
                 if result is not None:
                     return result.model_dump(), None
