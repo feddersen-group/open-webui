@@ -4,7 +4,7 @@ import uuid
 import json
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import quote
 import asyncio
 
@@ -40,7 +40,10 @@ from open_webui.routers.retrieval import ProcessFileForm, process_file
 from open_webui.routers.audio import transcribe
 from open_webui.storage.provider import Storage
 from open_webui.utils.auth import get_admin_user, get_verified_user
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+
+from feddersen.models import ExtraMetadata
+from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -163,14 +166,26 @@ def upload_file_handler(
 ):
     log.info(f"file.content_type: {file.content_type}")
 
-    if isinstance(metadata, str):
-        try:
-            metadata = json.loads(metadata)
-        except json.JSONDecodeError:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
-            )
+    if isinstance(metadata, str):  # Parse only if it's a string
+        if internal:
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
+                )
+        else:
+            try:
+                metadata = ExtraMetadata.model_validate_json(
+                    metadata, strict=True
+                )
+            except ValidationError as e:
+                log.error(f"Error parsing metadata: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail='Could not parse "metadata" as ExtraMetadata. Make sure to stick to the schema',
+                )
     file_metadata = metadata if metadata else {}
 
     try:
@@ -223,7 +238,16 @@ def upload_file_handler(
                         "name": name,
                         "content_type": file.content_type,
                         "size": len(contents),
-                        "data": file_metadata,
+                        # Use the data keyword natively from open_webui when it passes a dict
+                        "data": (
+                            file_metadata if isinstance(file_metadata, dict) else {}
+                        ),
+                        # Use the EXTRA_MIDDLEWARE_METADATA_KEY keyword when it passes an ExtraMetadata object, API-Call
+                        EXTRA_MIDDLEWARE_METADATA_KEY: (
+                            file_metadata
+                            if isinstance(file_metadata, ExtraMetadata)
+                            else {}
+                        ),
                     },
                 }
             ),

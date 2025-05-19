@@ -1,6 +1,7 @@
 fastapi==0.118.0
 uvicorn[standard]==0.37.0
 pydantic==2.11.9
+gunicorn==23.0.0
 python-multipart==0.0.20
 itsdangerous==2.2.0
 
@@ -128,6 +129,10 @@ colbert-ai==0.2.21
 docker~=7.1.0
 pytest~=8.4.1
 pytest-docker~=3.1.1
+pytest-mock~=3.10.0
+pytest-postgresql~=7.0.0
+psycopg[binary]~=3.2.0  # psycopg3 needed for pytest-postgresql
+pytest-asyncio~=0.25.3
 
 ## LDAP
 ldap3==2.9.1
