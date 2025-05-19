@@ -4,6 +4,7 @@ from open_webui.config import VECTOR_DB, ENABLE_QDRANT_MULTITENANCY_MODE
 
 from feddersen.connectors.pgvector.pgvector import FeddersenPGVectorConnector
 
+
 class Vector:
 
     @staticmethod
