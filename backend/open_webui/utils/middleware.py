@@ -605,6 +605,7 @@ async def chat_completion_files_handler(
                         r=request.app.state.config.RELEVANCE_THRESHOLD,
                         hybrid_search=request.app.state.config.ENABLE_RAG_HYBRID_SEARCH,
                         full_context=request.app.state.config.RAG_FULL_CONTEXT,
+                        user=user,
                     ),
                 )
         except Exception as e:
