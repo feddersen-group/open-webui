@@ -181,9 +181,7 @@ def upload_file_handler(
                 )
         else:
             try:
-                metadata = ExtraMetadata.model_validate_json(
-                    metadata, strict=True
-                )
+                metadata = ExtraMetadata.model_validate_json(metadata, strict=True)
             except ValidationError as e:
                 log.error(f"Error parsing metadata: {e}")
                 raise HTTPException(
