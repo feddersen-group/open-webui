@@ -588,7 +588,7 @@ class KnowledgeManager:
                 content_type="application/octet-stream",
             )
             if metadata is not None:
-                form_data.add_field("file_metadata", metadata.model_dump_json())
+                form_data.add_field("metadata", metadata.model_dump_json())
 
             session = await self._get_session()
             async with session.post(
