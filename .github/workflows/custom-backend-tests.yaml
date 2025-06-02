@@ -3,7 +3,7 @@ description: 'Runs unit tests for the backend extensions.'
 on:
   pull_request:
     branches:
-      - main
+      - custom-main
     paths:
       - 'backend/**'
       - 'uv.lock'
