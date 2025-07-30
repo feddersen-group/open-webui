@@ -31,10 +31,8 @@
 		commandElement?.selectDown();
 	};
 
-	let command = '';
 	$: command = prompt?.split('\n').pop()?.split(' ')?.pop() ?? '';
 
-	let show = false;
 	// We manually took the @ symbol out here in order to not allow switiching different models in a chat
 	$: show = ['/', '#'].includes(command?.charAt(0)) || '\\#' === command.slice(0, 2);
 
