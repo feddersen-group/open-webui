@@ -7,7 +7,6 @@
 
 	import Prompts from './Commands/Prompts.svelte';
 	import Knowledge from './Commands/Knowledge.svelte';
-	import Models from './Commands/Models.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	export let show = false;
@@ -34,6 +33,8 @@
 	$: if (show) {
 		init();
 	}
+
+	
 
 	const init = async () => {
 		loading = true;
@@ -94,23 +95,7 @@
 					}
 				}}
 			/>
-		{:else if command?.charAt(0) === '@'}
-			<Models
-				bind:this={commandElement}
-				{command}
-				onSelect={(e) => {
-					const { type, data } = e;
 
-					if (type === 'model') {
-						insertTextHandler('');
-
-						onSelect({
-							type: 'model',
-							data: data
-						});
-					}
-				}}
-			/>
 		{/if}
 	{:else}
 		<div

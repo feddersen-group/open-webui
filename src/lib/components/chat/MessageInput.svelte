@@ -371,7 +371,7 @@
 	let command = '';
 
 	export let showCommands = false;
-	$: showCommands = ['/', '#', '@'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
+	$: showCommands = ['/', '#'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
 
 	let showTools = false;
 
