@@ -185,7 +185,7 @@ class DocumentAuthChunk(Base):
 
 
 class FeddersenPGVectorConnector(VectorSearchClient):
-    def __init__(self, session):
+    def __init__(self, session=None):
         self.middleware_metadata_key = EXTRA_MIDDLEWARE_METADATA_KEY
 
         self.group_retriever = UserGroupsRetriever(
