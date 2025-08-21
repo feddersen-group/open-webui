@@ -14,10 +14,15 @@ from feddersen.connectors.pgvector.pgvector import (
     FeddersenPGVectorConnector,
 )
 from open_webui.models.users import UserModel
+import uuid
 
 # Create a PostgreSQL database for testing
-postgresql_noproc = factories.postgresql_noproc(user="postgres", password="postgres")
-postgresql_external = factories.postgresql("postgresql_noproc", "test_db")
+# Generate a unique database name for this test session
+test_db_name = f"test_db_{uuid.uuid4().hex[:8]}"
+postgresql_noproc = factories.postgresql_noproc(
+    user="postgres", password="postgres", dbname=test_db_name
+)
+postgresql_external = factories.postgresql("postgresql_noproc", test_db_name)
 
 
 @pytest.fixture
@@ -191,7 +196,6 @@ def test_user_specific_access(
         return_value=mock_user_groups_retriever,
     ):
         connector = FeddersenPGVectorConnector(db_session)
-
         # Query by the specific document title
         result = connector.query(
             collection_name=collection_name,
@@ -393,6 +397,7 @@ def test_different_user_with_no_permissions(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
+
         connector = FeddersenPGVectorConnector(db_session)
 
         # Query for all documents
