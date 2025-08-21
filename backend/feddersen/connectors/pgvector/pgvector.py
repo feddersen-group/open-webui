@@ -185,7 +185,7 @@ class DocumentAuthChunk(Base):
 
 
 class FeddersenPGVectorConnector(VectorSearchClient):
-    def __init__(self):
+    def __init__(self, session):
         self.middleware_metadata_key = EXTRA_MIDDLEWARE_METADATA_KEY
 
         self.group_retriever = UserGroupsRetriever(
@@ -196,8 +196,11 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             cache_duration=3600 * 24,  # cache the user groups for a day
         )
 
+        # Used for testing
+        if session is not None:
+            self.session = session
         # if no pgvector uri, use the existing database connection
-        if not PGVECTOR_DB_URL:
+        elif not PGVECTOR_DB_URL:
             from open_webui.internal.db import Session
 
             self.session = Session

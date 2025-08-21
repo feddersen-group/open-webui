@@ -14,10 +14,15 @@ from feddersen.connectors.pgvector.pgvector import (
     FeddersenPGVectorConnector,
 )
 from open_webui.models.users import UserModel
+import uuid
 
 # Create a PostgreSQL database for testing
-postgresql_noproc = factories.postgresql_noproc(user="postgres", password="postgres")
-postgresql_external = factories.postgresql("postgresql_noproc", "test_db")
+# Generate a unique database name for this test session
+test_db_name = f"test_db_{uuid.uuid4().hex[:8]}"
+postgresql_noproc = factories.postgresql_noproc(
+    user="postgres", password="postgres", dbname=test_db_name
+)
+postgresql_external = factories.postgresql("postgresql_noproc", test_db_name)
 
 
 @pytest.fixture
@@ -164,22 +169,20 @@ def test_document_auth_chunk_basic_query(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Test query with filter
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"source": "test"},
-                limit=10,
-                user=test_user,
-            )
+        # Test query with filter
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"source": "test"},
+            limit=10,
+            user=test_user,
+        )
 
-            # Assertions
-            assert result is not None
-            # Should find 5 documents (not the no_access one)
-            assert len(result.ids[0]) == 6
+        # Assertions
+        assert result is not None
+        # Should find 5 documents (not the no_access one)
+        assert len(result.ids[0]) == 6
 
 
 def test_user_specific_access(
@@ -192,19 +195,17 @@ def test_user_specific_access(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "user_only_doc"},
-                limit=10,
-                user=test_user,
-            )
+        connector = FeddersenPGVectorConnector(db_session)
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "user_only_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert len(result.ids[0]) == 1
-            assert "user_only_doc" in result.ids[0]
+        assert len(result.ids[0]) == 1
+        assert "user_only_doc" in result.ids[0]
 
 
 def test_group_specific_access(
@@ -217,20 +218,18 @@ def test_group_specific_access(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "group_only_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "group_only_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert len(result.ids[0]) == 1
-            assert "group_only_doc" in result.ids[0]
+        assert len(result.ids[0]) == 1
+        assert "group_only_doc" in result.ids[0]
 
 
 def test_public_document_access(
@@ -243,20 +242,18 @@ def test_public_document_access(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "public_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "public_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert len(result.ids[0]) == 1
-            assert "public_doc" in result.ids[0]
+        assert len(result.ids[0]) == 1
+        assert "public_doc" in result.ids[0]
 
 
 def test_different_user_access_denied(
@@ -269,19 +266,17 @@ def test_different_user_access_denied(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "different_user_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "different_user_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert result is None
+        assert result is None
 
 
 def test_different_group_access_denied(
@@ -294,19 +289,17 @@ def test_different_group_access_denied(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"title": "different_group_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"title": "different_group_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert result is None
+        assert result is None
 
 
 def test_multi_user_access(
@@ -319,20 +312,18 @@ def test_multi_user_access(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "multi_user_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "multi_user_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert len(result.ids[0]) == 1
-            assert "multi_user_doc" in result.ids[0]
+        assert len(result.ids[0]) == 1
+        assert "multi_user_doc" in result.ids[0]
 
 
 def test_multi_group_access(
@@ -345,20 +336,18 @@ def test_multi_group_access(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query by the specific document title
-            result = connector.query(
-                collection_name=collection_name,
-                filter={"name": "multi_group_doc"},
-                limit=10,
-                user=test_user,
-            )
+        # Query by the specific document title
+        result = connector.query(
+            collection_name=collection_name,
+            filter={"name": "multi_group_doc"},
+            limit=10,
+            user=test_user,
+        )
 
-            assert len(result.ids[0]) == 1
-            assert "multi_group_doc" in result.ids[0]
+        assert len(result.ids[0]) == 1
+        assert "multi_group_doc" in result.ids[0]
 
 
 def test_anonymous_access(db_session, setup_test_data, mock_user_groups_retriever):
@@ -371,18 +360,16 @@ def test_anonymous_access(db_session, setup_test_data, mock_user_groups_retrieve
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Query for all documents with anonymous access
-            result = connector.query(
-                collection_name=collection_name, filter={}, limit=10, user=None
-            )
+        # Query for all documents with anonymous access
+        result = connector.query(
+            collection_name=collection_name, filter={}, limit=10, user=None
+        )
 
-            # Should only get public documents
-            assert len(result.ids[0]) == 1
-            assert "public_doc" in result.ids[0]
+        # Should only get public documents
+        assert len(result.ids[0]) == 1
+        assert "public_doc" in result.ids[0]
 
 
 def test_different_user_with_no_permissions(
@@ -410,15 +397,14 @@ def test_different_user_with_no_permissions(
         "feddersen.connectors.pgvector.pgvector.UserGroupsRetriever",
         return_value=mock_user_groups_retriever,
     ):
-        # Mock the Session from open_webui.internal.db to use our test session
-        with patch("open_webui.internal.db.Session", return_value=db_session):
-            connector = FeddersenPGVectorConnector()
 
-            # Query for all documents
-            result = connector.query(
-                collection_name=collection_name, filter={}, limit=10, user=other_user
-            )
+        connector = FeddersenPGVectorConnector(db_session)
 
-            # Should only see public documents and documents shared directly with them
-            assert len(result.ids[0]) == 1
-            assert "public_doc" in result.ids[0]
+        # Query for all documents
+        result = connector.query(
+            collection_name=collection_name, filter={}, limit=10, user=other_user
+        )
+
+        # Should only see public documents and documents shared directly with them
+        assert len(result.ids[0]) == 1
+        assert "public_doc" in result.ids[0]
