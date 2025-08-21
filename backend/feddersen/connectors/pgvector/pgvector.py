@@ -6,7 +6,6 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.open_webui.retrieval.vector.dbs.pgvector import pgcrypto_decrypt
 from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
 from feddersen.connectors.base import VectorSearchClient
 from feddersen.connectors.pgvector.auth_util import FilterUtils
@@ -20,13 +19,14 @@ from open_webui.config import (
     PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
     PGVECTOR_PGCRYPTO,
     PGVECTOR_PGCRYPTO_KEY,
-    PGVECTOR_POOL_SIZE,
     PGVECTOR_POOL_MAX_OVERFLOW,
-    PGVECTOR_POOL_TIMEOUT,
     PGVECTOR_POOL_RECYCLE,
+    PGVECTOR_POOL_SIZE,
+    PGVECTOR_POOL_TIMEOUT,
 )
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
+from open_webui.retrieval.vector.dbs.pgvector import pgcrypto_decrypt
 from open_webui.retrieval.vector.main import GetResult, SearchResult, VectorItem
 from pgvector.sqlalchemy import Vector
 from pydantic import ValidationError
@@ -51,7 +51,6 @@ from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
 from sqlalchemy.pool import NullPool, QueuePool
 from sqlalchemy.sql import true
 from sqlalchemy.sql.elements import ColumnElement
-
 
 VECTOR_LENGTH = PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH
 Base = declarative_base()
