@@ -6,6 +6,7 @@ from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from backend.open_webui.retrieval.vector.dbs.pgvector import pgcrypto_decrypt
 from feddersen.config import EXTRA_MIDDLEWARE_METADATA_KEY
 from feddersen.connectors.base import VectorSearchClient
 from feddersen.connectors.pgvector.auth_util import FilterUtils
@@ -17,6 +18,12 @@ from open_webui.config import (
     MICROSOFT_CLIENT_TENANT_ID,
     PGVECTOR_DB_URL,
     PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
+    PGVECTOR_PGCRYPTO,
+    PGVECTOR_PGCRYPTO_KEY,
+    PGVECTOR_POOL_SIZE,
+    PGVECTOR_POOL_MAX_OVERFLOW,
+    PGVECTOR_POOL_TIMEOUT,
+    PGVECTOR_POOL_RECYCLE,
 )
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
@@ -26,6 +33,7 @@ from pydantic import ValidationError
 from sqlalchemy import (
     Column,
     Integer,
+    LargeBinary,
     MetaData,
     Table,
     Text,
@@ -40,15 +48,16 @@ from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import declarative_base, scoped_session, sessionmaker
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 from sqlalchemy.sql import true
 from sqlalchemy.sql.elements import ColumnElement
 
-log = logging.getLogger(__name__)
-log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 VECTOR_LENGTH = PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH
 Base = declarative_base()
+
+log = logging.getLogger(__name__)
+log.setLevel(SRC_LOG_LEVELS["RAG"])
 
 
 class DocumentAuthChunk(Base):
@@ -57,9 +66,15 @@ class DocumentAuthChunk(Base):
     id = Column(Text, primary_key=True)
     vector = Column(Vector(dim=VECTOR_LENGTH), nullable=True)
     collection_name = Column(Text, nullable=False)
-    text = Column(Text, nullable=True)
-    vmetadata = Column(MutableDict.as_mutable(JSONB), nullable=True)
-    file_auth = Column(MutableDict.as_mutable(JSONB), nullable=True)
+
+    if PGVECTOR_PGCRYPTO:
+        text = Column(LargeBinary, nullable=True)
+        vmetadata = Column(LargeBinary, nullable=True)
+        file_auth = Column(LargeBinary, nullable=True)
+    else:
+        text = Column(Text, nullable=True)
+        vmetadata = Column(MutableDict.as_mutable(JSONB), nullable=True)
+        file_auth = Column(MutableDict.as_mutable(JSONB), nullable=True)
 
     @classmethod
     def create(
@@ -171,7 +186,7 @@ class DocumentAuthChunk(Base):
 
 
 class FeddersenPGVectorConnector(VectorSearchClient):
-    def __init__(self, session=None):
+    def __init__(self):
         self.middleware_metadata_key = EXTRA_MIDDLEWARE_METADATA_KEY
 
         self.group_retriever = UserGroupsRetriever(
@@ -182,18 +197,30 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             cache_duration=3600 * 24,  # cache the user groups for a day
         )
 
-        if session:
-            # allow to insert session for test reasons
-            self.session = session
-        elif not PGVECTOR_DB_URL:
-            # if no pgvector uri, use the existing database connection
+        # if no pgvector uri, use the existing database connection
+        if not PGVECTOR_DB_URL:
             from open_webui.internal.db import Session
 
             self.session = Session
         else:
-            engine = create_engine(
-                PGVECTOR_DB_URL, pool_pre_ping=True, poolclass=NullPool
-            )
+            if isinstance(PGVECTOR_POOL_SIZE, int):
+                if PGVECTOR_POOL_SIZE > 0:
+                    engine = create_engine(
+                        PGVECTOR_DB_URL,
+                        pool_size=PGVECTOR_POOL_SIZE,
+                        max_overflow=PGVECTOR_POOL_MAX_OVERFLOW,
+                        pool_timeout=PGVECTOR_POOL_TIMEOUT,
+                        pool_recycle=PGVECTOR_POOL_RECYCLE,
+                        pool_pre_ping=True,
+                        poolclass=QueuePool,
+                    )
+                else:
+                    engine = create_engine(
+                        PGVECTOR_DB_URL, pool_pre_ping=True, poolclass=NullPool
+                    )
+            else:
+                engine = create_engine(PGVECTOR_DB_URL, pool_pre_ping=True)
+
             SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
             )
@@ -202,6 +229,22 @@ class FeddersenPGVectorConnector(VectorSearchClient):
         try:
             # Ensure the pgvector extension is available
             self.session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+
+            if PGVECTOR_PGCRYPTO:
+                raise Exception(
+                    "PGVECTOR_PGCRYPTO is enabled but not supported by our custom "
+                    "implementation. If is is necessary, you need to finish the "
+                    "implementation, accordingly to OWUI's pgvector connection. "
+                    "Mainly the 'query' method is missing for this. "
+                )
+
+                # Ensure the pgcrypto extension is available for encryption
+                self.session.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+
+                if not PGVECTOR_PGCRYPTO_KEY:
+                    raise ValueError(
+                        "PGVECTOR_PGCRYPTO_KEY must be set when PGVECTOR_PGCRYPTO is enabled."
+                    )
 
             # Check vector length consistency
             self.check_vector_length()
@@ -246,6 +289,42 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             log.exception(f"Error during initialization: {e}")
             raise
 
+    def check_vector_length(self) -> None:
+        """
+        Check if the VECTOR_LENGTH matches the existing vector column dimension in the database.
+        Raises an exception if there is a mismatch.
+        """
+        metadata = MetaData()
+        try:
+            # Attempt to reflect the 'document_auth_chunk' table
+            document_chunk_table = Table(
+                "document_auth_chunk", metadata, autoload_with=self.session.bind
+            )
+        except NoSuchTableError:
+            # Table does not exist; no action needed
+            return
+
+        # Proceed to check the vector column
+        if "vector" in document_chunk_table.columns:
+            vector_column = document_chunk_table.columns["vector"]
+            vector_type = vector_column.type
+            if isinstance(vector_type, Vector):
+                db_vector_length = vector_type.dim
+                if db_vector_length != VECTOR_LENGTH:
+                    raise Exception(
+                        f"VECTOR_LENGTH {VECTOR_LENGTH} does not match existing vector column "
+                        f"dimension {db_vector_length}. "
+                        "Cannot change vector size after initialization without migrating the data."
+                    )
+            else:
+                raise Exception(
+                    "The 'vector' column exists but is not of type 'Vector'."
+                )
+        else:
+            raise Exception(
+                "The 'vector' column does not exist in the 'document_auth_chunk' table."
+            )
+
     def adjust_vector_length(self, vector: List[float]) -> List[float]:
         # Adjust vector to have length VECTOR_LENGTH
         current_length = len(vector)
@@ -253,8 +332,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             # Pad the vector with zeros
             vector += [0.0] * (VECTOR_LENGTH - current_length)
         elif current_length > VECTOR_LENGTH:
-            # CUSTOM EDIT: Truncate the vector to VECTOR_LENGTH instead of raising an error
-            # Only valid for matryoshka embedding vectors like openai's text-embedding-3-large
+            # Truncate the vector to VECTOR_LENGTH
             vector = vector[:VECTOR_LENGTH]
         return vector
 
@@ -304,6 +382,159 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                         m["name"] = f"{duplicated_title} ({date_str})"
         return meta_copy
 
+    def insert(self, collection_name: str, items: List[VectorItem]) -> None:
+        try:
+            if PGVECTOR_PGCRYPTO:
+                for item in items:
+                    vector = self.adjust_vector_length(item["vector"])
+                    # Use raw SQL for BYTEA/pgcrypto
+                    # Ensure metadata is converted to its JSON text representation
+                    meta_data, file_auth = DocumentAuthChunk.prepare_metadata(
+                        item["metadata"],
+                        self.middleware_metadata_key,
+                        replace_keys={"name": "title"},
+                    )
+                    json_metadata = json.dumps(meta_data)
+                    json_file_auth = json.dumps(file_auth)
+                    self.session.execute(
+                        text(
+                            """
+                            INSERT INTO document_auth_chunk
+                            (id, vector, collection_name, text, vmetadata, file_auth)
+                            VALUES (
+                                :id, :vector, :collection_name,
+                                pgp_sym_encrypt(:text, :key),
+                                pgp_sym_encrypt(:metadata_text, :key),
+                                pgp_sym_encrypt(:file_auth_text, :key)
+                            )
+                            ON CONFLICT (id) DO NOTHING
+                        """
+                        ),
+                        {
+                            "id": item["id"],
+                            "vector": vector,
+                            "collection_name": collection_name,
+                            "text": item["text"],
+                            "metadata_text": json_metadata,
+                            "file_auth_text": json_file_auth,
+                            "key": PGVECTOR_PGCRYPTO_KEY,
+                        },
+                    )
+                self.session.commit()
+                log.info(f"Encrypted & inserted {len(items)} into '{collection_name}'")
+
+            else:
+                new_items = []
+                for item in items:
+                    vector = self.adjust_vector_length(item["vector"])
+                    new_chunk = DocumentAuthChunk.create(
+                        id=item["id"],
+                        vector=vector,
+                        collection_name=collection_name,
+                        text=item["text"],
+                        vmetadata=item["metadata"],
+                        custom_metadata_key=self.middleware_metadata_key,
+                        replace_keys={"name": "title"},
+                    )
+                    new_items.append(new_chunk)
+                self.session.bulk_save_objects(new_items)
+                self.session.commit()
+                log.info(
+                    f"Inserted {len(new_items)} items into collection '{collection_name}'."
+                )
+        except Exception as e:
+            self.session.rollback()
+            log.exception(f"Error during insert: {e}")
+            raise
+
+    def upsert(self, collection_name: str, items: List[VectorItem]) -> None:
+        try:
+            if PGVECTOR_PGCRYPTO:
+                for item in items:
+                    vector = self.adjust_vector_length(item["vector"])
+                    # Use raw SQL for BYTEA/pgcrypto
+                    # Ensure metadata is converted to its JSON text representation
+                    meta_data, file_auth = DocumentAuthChunk.prepare_metadata(
+                        item["metadata"],
+                        self.middleware_metadata_key,
+                        replace_keys={"name": "title"},
+                    )
+                    json_metadata = json.dumps(meta_data)
+                    json_file_auth = json.dumps(file_auth)
+                    self.session.execute(
+                        text(
+                            """
+                            INSERT INTO document_auth_chunk
+                            (id, vector, collection_name, text, vmetadata, file_auth)
+                            VALUES (
+                                :id, :vector, :collection_name,
+                                pgp_sym_encrypt(:text, :key),
+                                pgp_sym_encrypt(:metadata_text, :key),
+                                pgp_sym_encrypt(:file_auth_text, :key)
+                            )
+                            ON CONFLICT (id) DO UPDATE SET
+                              vector = EXCLUDED.vector,
+                              collection_name = EXCLUDED.collection_name,
+                              text = EXCLUDED.text,
+                              vmetadata = EXCLUDED.vmetadata,
+                              file_auth = EXCLUDED.file_auth
+                        """
+                        ),
+                        {
+                            "id": item["id"],
+                            "vector": vector,
+                            "collection_name": collection_name,
+                            "text": item["text"],
+                            "metadata_text": json_metadata,
+                            "file_auth_text": json_file_auth,
+                            "key": PGVECTOR_PGCRYPTO_KEY,
+                        },
+                    )
+                self.session.commit()
+                log.info(f"Encrypted & inserted {len(items)} into '{collection_name}'")
+            else:
+                for item in items:
+                    vector = self.adjust_vector_length(item["vector"])
+                    existing = (
+                        self.session.query(DocumentAuthChunk)
+                        .filter(DocumentAuthChunk.id == item["id"])
+                        .first()
+                    )
+                    if existing:
+                        existing.vector = vector
+                        existing.text = item["text"]
+
+                        metadata, auth = DocumentAuthChunk.prepare_metadata(
+                            item["metadata"],
+                            self.middleware_metadata_key,
+                            replace_keys={"name": "title"},
+                        )
+
+                        existing.vmetadata = metadata
+                        existing.collection_name = (
+                            collection_name  # Update collection_name if necessary
+                        )
+                        existing.file_auth = auth
+                    else:
+                        new_chunk = DocumentAuthChunk.create(
+                            id=item["id"],
+                            vector=vector,
+                            collection_name=collection_name,
+                            text=item["text"],
+                            vmetadata=item["metadata"],
+                            custom_metadata_key=self.middleware_metadata_key,
+                            replace_keys={"name": "title"},
+                        )
+                        self.session.add(new_chunk)
+                self.session.commit()
+                log.info(
+                    f"Upserted {len(items)} items into collection '{collection_name}'."
+                )
+        except Exception as e:
+            self.session.rollback()
+            log.exception(f"Error during upsert: {e}")
+            raise
+
     def search(
         self,
         collection_name: str,
@@ -333,17 +564,42 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                 .alias("query_vectors")
             )
 
-            # Build the lateral subquery for each query vector
-            subq = select(
+            result_fields = [
                 DocumentAuthChunk.id,
-                DocumentAuthChunk.text,
-                DocumentAuthChunk.vmetadata,
+            ]
+            if PGVECTOR_PGCRYPTO:
+                result_fields.append(
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.text, PGVECTOR_PGCRYPTO_KEY, Text
+                    ).label("text")
+                )
+                result_fields.append(
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.vmetadata, PGVECTOR_PGCRYPTO_KEY, JSONB
+                    ).label("vmetadata")
+                )
+                result_fields.append(
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.file_auth, PGVECTOR_PGCRYPTO_KEY, JSONB
+                    ).label("file_auth")
+                )
+            else:
+                result_fields.append(DocumentAuthChunk.text)
+                result_fields.append(DocumentAuthChunk.vmetadata)
+                result_fields.append(DocumentAuthChunk.file_auth)
+            result_fields.append(
                 (
                     DocumentAuthChunk.vector.cosine_distance(query_vectors.c.q_vector)
-                ).label("distance"),
-            ).where(DocumentAuthChunk.collection_name == collection_name)
+                ).label("distance")
+            )
 
-            # Restrict to documents that the user has access to
+            # Build the lateral subquery for each query vector
+            # Build the lateral subquery for each query vector
+            subq = select(*result_fields).where(
+                DocumentAuthChunk.collection_name == collection_name
+            )
+
+            # Restrict to documents that the user has access to. DOES NOT WORK WITH ENCRYPTION
             subq = subq.where(self._create_permission_filter(user))
 
             subq = subq.order_by(
@@ -401,6 +657,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                 ids=ids, distances=distances, documents=documents, metadatas=metadatas
             )
         except Exception as e:
+            self.session.rollback()
             log.exception(f"Error during search: {e}")
             return None
 
@@ -412,23 +669,52 @@ class FeddersenPGVectorConnector(VectorSearchClient):
         user: UserModel | None = None,
     ) -> Optional[GetResult]:
         try:
-            query = self.session.query(DocumentAuthChunk).filter(
-                DocumentAuthChunk.collection_name == collection_name
-            )
+            if PGVECTOR_PGCRYPTO:
+                # Build where clause for vmetadata filter
+                where_clauses = [DocumentAuthChunk.collection_name == collection_name]
+                for key, value in filter.items():
+                    # decrypt then check key: JSON filter after decryption
+                    where_clauses.append(
+                        pgcrypto_decrypt(
+                            DocumentAuthChunk.vmetadata, PGVECTOR_PGCRYPTO_KEY, JSONB
+                        )[key].astext
+                        == str(value)
+                    )
 
-            # Restrict to documents that the user has access to
-            permission_filter_stmt = self._create_permission_filter(user)
-            query = query.filter(permission_filter_stmt)
+                    # HERE WE WOULD NEED A CUSTOM LOGIC TO DECRYPT THE FILE AUTH AND CREATE A
+                    # VALID STATEMENT. THIS IS NOT STRAIGHT FORWARD THOUGH. FOR THIS REASON,
+                    # WE DEACTIVATE PGVECTOR ENCRYPTION AND RAISE AN ERROR ON INIT IF IT IS SET
 
-            for key, value in filter.items():
-                query = query.filter(
-                    DocumentAuthChunk.vmetadata[key].astext == str(value)
+                stmt = select(
+                    DocumentAuthChunk.id,
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.text, PGVECTOR_PGCRYPTO_KEY, Text
+                    ).label("text"),
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.vmetadata, PGVECTOR_PGCRYPTO_KEY, JSONB
+                    ).label("vmetadata"),
+                ).where(*where_clauses)
+                if limit is not None:
+                    stmt = stmt.limit(limit)
+                results = self.session.execute(stmt).all()
+            else:
+                query = self.session.query(DocumentAuthChunk).filter(
+                    DocumentAuthChunk.collection_name == collection_name
                 )
 
-            if limit is not None:
-                query = query.limit(limit)
+                # Restrict to documents that the user has access to
+                permission_filter_stmt = self._create_permission_filter(user)
+                query = query.filter(permission_filter_stmt)
 
-            results = query.all()
+                for key, value in filter.items():
+                    query = query.filter(
+                        DocumentAuthChunk.vmetadata[key].astext == str(value)
+                    )
+
+                if limit is not None:
+                    query = query.limit(limit)
+
+                results = query.all()
 
             if not results:
                 return None
@@ -437,15 +723,14 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             documents = [[result.text for result in results]]
             metadatas = [[result.vmetadata for result in results]]
 
-            # Make titles unique for each query by adding the date to the name
-            metadatas[0] = self.make_titles_unique(metadatas[0])
-
+            self.session.rollback()  # read-only transaction
             return GetResult(
                 ids=ids,
                 documents=documents,
                 metadatas=metadatas,
             )
         except Exception as e:
+            self.session.rollback()
             log.exception(f"Error during query: {e}")
             return None
 
@@ -456,138 +741,61 @@ class FeddersenPGVectorConnector(VectorSearchClient):
         user: UserModel | None = None,
     ) -> Optional[GetResult]:
         try:
-            query = self.session.query(DocumentAuthChunk).filter(
-                DocumentAuthChunk.collection_name == collection_name
-            )
+            if PGVECTOR_PGCRYPTO:
+                stmt = select(
+                    DocumentAuthChunk.id,
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.text, PGVECTOR_PGCRYPTO_KEY, Text
+                    ).label("text"),
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.vmetadata, PGVECTOR_PGCRYPTO_KEY, JSONB
+                    ).label("vmetadata"),
+                    pgcrypto_decrypt(
+                        DocumentAuthChunk.file_auth, PGVECTOR_PGCRYPTO_KEY, JSONB
+                    ).label("file_auth"),
+                ).where(DocumentAuthChunk.collection_name == collection_name)
 
-            # Restrict to documents that the user has access to
-            permission_filter_stmt = self._create_permission_filter(user)
-            query = query.filter(permission_filter_stmt)
+                # Restrict to documents that the user has access to
+                permission_filter_stmt = self._create_permission_filter(user)
+                stmt = stmt.filter(permission_filter_stmt)
 
-            if limit is not None:
-                query = query.limit(limit)
+                if limit is not None:
+                    stmt = stmt.limit(limit)
+                results = self.session.execute(stmt).all()
+                ids = [[row.id for row in results]]
+                documents = [[row.text for row in results]]
+                metadatas = [[row.vmetadata for row in results]]
+            else:
 
-            results = query.all()
+                query = self.session.query(DocumentAuthChunk).filter(
+                    DocumentAuthChunk.collection_name == collection_name
+                )
 
-            if not results:
-                return None
+                # Restrict to documents that the user has access to
+                permission_filter_stmt = self._create_permission_filter(user)
+                query = query.filter(permission_filter_stmt)
 
-            ids = [[result.id for result in results]]
-            documents = [[result.text for result in results]]
-            metadatas = [[result.vmetadata for result in results]]
+                if limit is not None:
+                    query = query.limit(limit)
 
-            # Make titles unique for each query by adding the date to the name
-            metadatas[0] = self.make_titles_unique(metadatas[0])
+                results = query.all()
 
+                if not results:
+                    return None
+
+                ids = [[result.id for result in results]]
+                documents = [[result.text for result in results]]
+                metadatas = [[result.vmetadata for result in results]]
+
+                # Make titles unique for each query by adding the date to the name
+                metadatas[0] = self.make_titles_unique(metadatas[0])
+
+            self.session.rollback()  # read-only transaction
             return GetResult(ids=ids, documents=documents, metadatas=metadatas)
         except Exception as e:
+            self.session.rollback()
             log.exception(f"Error during get: {e}")
             return None
-
-    def check_vector_length(self) -> None:
-        """
-        Check if the VECTOR_LENGTH matches the existing vector column dimension in the database.
-        Raises an exception if there is a mismatch.
-        """
-        metadata = MetaData()
-        try:
-            # Attempt to reflect the 'document_auth_chunk' table
-            document_chunk_table = Table(
-                "document_auth_chunk", metadata, autoload_with=self.session.bind
-            )
-        except NoSuchTableError:
-            # Table does not exist; no action needed
-            return
-
-        # Proceed to check the vector column
-        if "vector" in document_chunk_table.columns:
-            vector_column = document_chunk_table.columns["vector"]
-            vector_type = vector_column.type
-            if isinstance(vector_type, Vector):
-                db_vector_length = vector_type.dim
-                if db_vector_length != VECTOR_LENGTH:
-                    raise Exception(
-                        f"VECTOR_LENGTH {VECTOR_LENGTH} does not match existing vector column "
-                        f"dimension {db_vector_length}. "
-                        "Cannot change vector size after initialization without migrating the data."
-                    )
-            else:
-                raise Exception(
-                    "The 'vector' column exists but is not of type 'Vector'."
-                )
-        else:
-            raise Exception(
-                "The 'vector' column does not exist in the 'document_auth_chunk' table."
-            )
-
-    def insert(self, collection_name: str, items: List[VectorItem]) -> None:
-        try:
-            new_items = []
-            for item in items:
-                vector = self.adjust_vector_length(item["vector"])
-                new_chunk = DocumentAuthChunk.create(
-                    id=item["id"],
-                    vector=vector,
-                    collection_name=collection_name,
-                    text=item["text"],
-                    vmetadata=item["metadata"],
-                    custom_metadata_key=self.middleware_metadata_key,
-                    replace_keys={"name": "title"},
-                )
-                new_items.append(new_chunk)
-            self.session.bulk_save_objects(new_items)
-            self.session.commit()
-            log.info(
-                f"Inserted {len(new_items)} items into collection '{collection_name}'."
-            )
-        except Exception as e:
-            self.session.rollback()
-            log.exception(f"Error during insert: {e}")
-            raise
-
-    def upsert(self, collection_name: str, items: List[VectorItem]) -> None:
-        try:
-            for item in items:
-                vector = self.adjust_vector_length(item["vector"])
-                existing = (
-                    self.session.query(DocumentAuthChunk)
-                    .filter(DocumentAuthChunk.id == item["id"])
-                    .first()
-                )
-                if existing:
-                    existing.vector = vector
-                    existing.text = item["text"]
-
-                    metadata, auth = DocumentAuthChunk.prepare_metadata(
-                        item["metadata"],
-                        self.middleware_metadata_key,
-                        replace_keys={"name": "title"},
-                    )
-
-                    existing.vmetadata = metadata
-                    existing.collection_name = (
-                        collection_name  # Update collection_name if necessary
-                    )
-                    existing.file_auth = auth
-                else:
-                    new_chunk = DocumentAuthChunk.create(
-                        id=item["id"],
-                        vector=vector,
-                        collection_name=collection_name,
-                        text=item["text"],
-                        vmetadata=item["metadata"],
-                        custom_metadata_key=self.middleware_metadata_key,
-                        replace_keys={"name": "title"},
-                    )
-                    self.session.add(new_chunk)
-            self.session.commit()
-            log.info(
-                f"Upserted {len(items)} items into collection '{collection_name}'."
-            )
-        except Exception as e:
-            self.session.rollback()
-            log.exception(f"Error during upsert: {e}")
-            raise
 
     def delete(
         self,
@@ -596,17 +804,35 @@ class FeddersenPGVectorConnector(VectorSearchClient):
         filter: Optional[Dict[str, Any]] = None,
     ) -> None:
         try:
-            query = self.session.query(DocumentAuthChunk).filter(
-                DocumentAuthChunk.collection_name == collection_name
-            )
-            if ids:
-                query = query.filter(DocumentAuthChunk.id.in_(ids))
-            if filter:
-                for key, value in filter.items():
-                    query = query.filter(
-                        DocumentAuthChunk.vmetadata[key].astext == str(value)
-                    )
-            deleted = query.delete(synchronize_session=False)
+            if PGVECTOR_PGCRYPTO:
+                wheres = [DocumentAuthChunk.collection_name == collection_name]
+                if ids:
+                    wheres.append(DocumentAuthChunk.id.in_(ids))
+                if filter:
+                    for key, value in filter.items():
+                        wheres.append(
+                            pgcrypto_decrypt(
+                                DocumentAuthChunk.vmetadata,
+                                PGVECTOR_PGCRYPTO_KEY,
+                                JSONB,
+                            )[key].astext
+                            == str(value)
+                        )
+                stmt = DocumentAuthChunk.__table__.delete().where(*wheres)
+                result = self.session.execute(stmt)
+                deleted = result.rowcount
+            else:
+                query = self.session.query(DocumentAuthChunk).filter(
+                    DocumentAuthChunk.collection_name == collection_name
+                )
+                if ids:
+                    query = query.filter(DocumentAuthChunk.id.in_(ids))
+                if filter:
+                    for key, value in filter.items():
+                        query = query.filter(
+                            DocumentAuthChunk.vmetadata[key].astext == str(value)
+                        )
+                deleted = query.delete(synchronize_session=False)
             self.session.commit()
             log.info(f"Deleted {deleted} items from collection '{collection_name}'.")
         except Exception as e:
@@ -626,6 +852,9 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             log.exception(f"Error during reset: {e}")
             raise
 
+    def close(self) -> None:
+        pass
+
     def has_collection(self, collection_name: str) -> bool:
         try:
             exists = (
@@ -634,14 +863,13 @@ class FeddersenPGVectorConnector(VectorSearchClient):
                 .first()
                 is not None
             )
+            self.session.rollback()  # read-only transaction
             return exists
         except Exception as e:
+            self.session.rollback()
             log.exception(f"Error checking collection existence: {e}")
             return False
 
     def delete_collection(self, collection_name: str) -> None:
         self.delete(collection_name)
         log.info(f"Collection '{collection_name}' deleted.")
-
-    def close(self) -> None:
-        pass

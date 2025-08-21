@@ -640,8 +640,9 @@ def get_sources_from_items(
 
             try:
                 if full_context:
-                    query_result = get_all_items_from_collections(collection_names,
-                                                                  user=user)
+                    query_result = get_all_items_from_collections(
+                        collection_names, user=user
+                    )
                 else:
                     query_result = None  # Initialize to None
                     if hybrid_search:
@@ -669,7 +670,7 @@ def get_sources_from_items(
                             queries=queries,
                             embedding_function=embedding_function,
                             k=k,
-                            user=user
+                            user=user,
                         )
             except Exception as e:
                 log.exception(e)
