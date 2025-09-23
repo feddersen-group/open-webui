@@ -587,6 +587,10 @@ class KnowledgeManager:
                 filename=file_path.name,
                 content_type="application/octet-stream",
             )
+            form_data.add_field(
+                "process_in_background",
+                "False",
+            )
             if metadata is not None:
                 form_data.add_field("metadata", metadata.model_dump_json())
 
@@ -594,6 +598,7 @@ class KnowledgeManager:
             async with session.post(
                 url, data=form_data, headers=self.headers
             ) as response:
+                print(await response.text())
                 if response.status != 200:
                     response_text = await response.text()
                     self.logger.error(
@@ -602,6 +607,9 @@ class KnowledgeManager:
                     return None
 
                 result = await response.json()
+
+                print(result)
+
                 file_id = result.get("id")
                 if not file_id:
                     self.logger.error(f"Failed to get file ID for: {file_path}")
