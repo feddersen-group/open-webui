@@ -167,7 +167,9 @@ def upload_file_handler(
     log.info(f"file.content_type: {file.content_type}")
 
     if isinstance(metadata, str):  # Parse only if it's a string
-        if internal:
+        try:
+            metadata = ExtraMetadata.model_validate_json(metadata, strict=True)
+        except ValidationError as e:
             try:
                 metadata = json.loads(metadata)
             except json.JSONDecodeError:
@@ -175,15 +177,7 @@ def upload_file_handler(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
                 )
-        else:
-            try:
-                metadata = ExtraMetadata.model_validate_json(metadata, strict=True)
-            except ValidationError as e:
-                log.error(f"Error parsing metadata: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail='Could not parse "metadata" as ExtraMetadata. Make sure to stick to the schema',
-                )
+                
     file_metadata = metadata if metadata else {}
 
     try:
