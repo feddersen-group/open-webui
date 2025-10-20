@@ -1,9 +1,11 @@
+import os
+
 # the key where we store our metadata in the database as JSON.
 # If you change this, you must also change it in the frontend.
 # For this, it's best to look for the current string and replace it.
 # This is in an extra file so that the import works and does not cause a circular import.
 EXTRA_MIDDLEWARE_METADATA_KEY = "middleware_metadata"
-ENTRA_USER_GROUP_PREFIX = "-"
+ENTRA_USER_GROUP_PREFIX = os.environ.get("ENTRA_USER_GROUP_PREFIX", "-")
 PDF_EXTRACTION_GEMINI_PAGE_LIMIT = 20
 
 # Configuration for the GeminiLoader
