@@ -1177,7 +1177,7 @@ async def get_sources_from_items(
                             queries=queries,
                             embedding_function=embedding_function,
                             k=k,
-                            user=user
+                            user=user,
                         )
             except Exception as e:
                 log.exception(e)

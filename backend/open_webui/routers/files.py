@@ -198,7 +198,7 @@ def upload_file_handler(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ERROR_MESSAGES.DEFAULT("Invalid metadata format"),
                 )
-                
+
     file_metadata = metadata if metadata else {}
 
     try:
