@@ -1516,7 +1516,8 @@ def process_file(
                 try:
                     # /files/{file_id}/data/content/update
                     VECTOR_DB_CLIENT.delete_collection(
-                        collection_name=f"file-{file.id}")
+                        collection_name=f"file-{file.id}"
+                    )
                 except:
                     pass
 
@@ -1552,7 +1553,7 @@ def process_file(
                     ]
                 else:
                     docs = []
-                    
+
                 text_content = file.data.get("content", "")
             else:
                 # Process the file and save the content
