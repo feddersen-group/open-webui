@@ -1543,81 +1543,10 @@ def process_file(
                         )
                         for idx, id in enumerate(result.ids[0])
                     ]
-                text_content = file.data.get("content", "")
-            else:
-                # Process the file and save the content
-                # Usage: /files/
-                file_path = file.path
-                if file_path:
-                    file_path = Storage.get_file(file_path)
-                    loader = Loader(
-                        engine=request.app.state.config.CONTENT_EXTRACTION_ENGINE,
-                        DATALAB_MARKER_API_KEY=request.app.state.config.DATALAB_MARKER_API_KEY,
-                        DATALAB_MARKER_API_BASE_URL=request.app.state.config.DATALAB_MARKER_API_BASE_URL,
-                        DATALAB_MARKER_ADDITIONAL_CONFIG=request.app.state.config.DATALAB_MARKER_ADDITIONAL_CONFIG,
-                        DATALAB_MARKER_SKIP_CACHE=request.app.state.config.DATALAB_MARKER_SKIP_CACHE,
-                        DATALAB_MARKER_FORCE_OCR=request.app.state.config.DATALAB_MARKER_FORCE_OCR,
-                        DATALAB_MARKER_PAGINATE=request.app.state.config.DATALAB_MARKER_PAGINATE,
-                        DATALAB_MARKER_STRIP_EXISTING_OCR=request.app.state.config.DATALAB_MARKER_STRIP_EXISTING_OCR,
-                        DATALAB_MARKER_DISABLE_IMAGE_EXTRACTION=request.app.state.config.DATALAB_MARKER_DISABLE_IMAGE_EXTRACTION,
-                        DATALAB_MARKER_FORMAT_LINES=request.app.state.config.DATALAB_MARKER_FORMAT_LINES,
-                        DATALAB_MARKER_USE_LLM=request.app.state.config.DATALAB_MARKER_USE_LLM,
-                        DATALAB_MARKER_OUTPUT_FORMAT=request.app.state.config.DATALAB_MARKER_OUTPUT_FORMAT,
-                        EXTERNAL_DOCUMENT_LOADER_URL=request.app.state.config.EXTERNAL_DOCUMENT_LOADER_URL,
-                        EXTERNAL_DOCUMENT_LOADER_API_KEY=request.app.state.config.EXTERNAL_DOCUMENT_LOADER_API_KEY,
-                        TIKA_SERVER_URL=request.app.state.config.TIKA_SERVER_URL,
-                        DOCLING_SERVER_URL=request.app.state.config.DOCLING_SERVER_URL,
-                        DOCLING_PARAMS={
-                            "do_ocr": request.app.state.config.DOCLING_DO_OCR,
-                            "force_ocr": request.app.state.config.DOCLING_FORCE_OCR,
-                            "ocr_engine": request.app.state.config.DOCLING_OCR_ENGINE,
-                            "ocr_lang": request.app.state.config.DOCLING_OCR_LANG,
-                            "pdf_backend": request.app.state.config.DOCLING_PDF_BACKEND,
-                            "table_mode": request.app.state.config.DOCLING_TABLE_MODE,
-                            "pipeline": request.app.state.config.DOCLING_PIPELINE,
-                            "do_picture_description": request.app.state.config.DOCLING_DO_PICTURE_DESCRIPTION,
-                            "picture_description_mode": request.app.state.config.DOCLING_PICTURE_DESCRIPTION_MODE,
-                            "picture_description_local": request.app.state.config.DOCLING_PICTURE_DESCRIPTION_LOCAL,
-                            "picture_description_api": request.app.state.config.DOCLING_PICTURE_DESCRIPTION_API,
-                        },
-                        PDF_EXTRACT_IMAGES=request.app.state.config.PDF_EXTRACT_IMAGES,
-                        DOCUMENT_INTELLIGENCE_ENDPOINT=request.app.state.config.DOCUMENT_INTELLIGENCE_ENDPOINT,
-                        DOCUMENT_INTELLIGENCE_KEY=request.app.state.config.DOCUMENT_INTELLIGENCE_KEY,
-                        MISTRAL_OCR_API_KEY=request.app.state.config.MISTRAL_OCR_API_KEY,
-                        LITELLM_BASE_URL=request.app.state.config.RAG_OPENAI_API_BASE_URL,
-                        LITELLM_API_KEY=request.app.state.config.RAG_OPENAI_API_KEY,
-                    )
-                    docs = loader.load(
-                        file.filename, file.meta.get("content_type"), file_path
-                    )
-
-                    docs = [
-                        Document(
-                            page_content=doc.page_content,
-                            metadata={
-                                **doc.metadata,
-                                "name": file.filename,
-                                "created_by": file.user_id,
-                                "file_id": file.id,
-                                "source": file.filename,
-                            },
-                        )
-                        for doc in docs
-                    ]
                 else:
-                    docs = [
-                        Document(
-                            page_content=file.data.get("content", ""),
-                            metadata={
-                                **file.meta,
-                                "name": file.filename,
-                                "created_by": file.user_id,
-                                "file_id": file.id,
-                                "source": file.filename,
-                            },
-                        )
-                    ]
-                text_content = " ".join([doc.page_content for doc in docs])
+                    docs = []
+                    
+                text_content = file.data.get("content", "")
             else:
                 # Process the file and save the content
                 # Usage: /files/
