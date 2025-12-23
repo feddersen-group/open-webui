@@ -17,6 +17,11 @@ from open_webui.config import (
     MICROSOFT_CLIENT_TENANT_ID,
     PGVECTOR_DB_URL,
     PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH,
+    PGVECTOR_CREATE_EXTENSION,
+    PGVECTOR_POOL_SIZE,
+    PGVECTOR_POOL_MAX_OVERFLOW,
+    PGVECTOR_POOL_TIMEOUT,
+    PGVECTOR_POOL_RECYCLE,
 )
 from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
@@ -36,6 +41,8 @@ from sqlalchemy import (
     text,
     values,
 )
+from sqlalchemy.pool import NullPool, QueuePool
+
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.ext.mutable import MutableDict
@@ -45,7 +52,6 @@ from sqlalchemy.sql import true
 from sqlalchemy.sql.elements import ColumnElement
 
 log = logging.getLogger(__name__)
-log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 VECTOR_LENGTH = PGVECTOR_INITIALIZE_MAX_VECTOR_LENGTH
 Base = declarative_base()
@@ -171,7 +177,7 @@ class DocumentAuthChunk(Base):
 
 
 class FeddersenPGVectorConnector(VectorSearchClient):
-    def __init__(self, session=None):
+    def __init__(self):
         self.middleware_metadata_key = EXTRA_MIDDLEWARE_METADATA_KEY
 
         self.group_retriever = UserGroupsRetriever(
@@ -182,26 +188,49 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             cache_duration=3600 * 24,  # cache the user groups for a day
         )
 
-        if session:
-            # allow to insert session for test reasons
-            self.session = session
-        elif not PGVECTOR_DB_URL:
-            # if no pgvector uri, use the existing database connection
+        # if no pgvector uri, use the existing database connection
+        if not PGVECTOR_DB_URL:
             from open_webui.internal.db import Session
 
             self.session = Session
         else:
-            engine = create_engine(
-                PGVECTOR_DB_URL, pool_pre_ping=True, poolclass=NullPool
-            )
+            if isinstance(PGVECTOR_POOL_SIZE, int):
+                if PGVECTOR_POOL_SIZE > 0:
+                    engine = create_engine(
+                        PGVECTOR_DB_URL,
+                        pool_size=PGVECTOR_POOL_SIZE,
+                        max_overflow=PGVECTOR_POOL_MAX_OVERFLOW,
+                        pool_timeout=PGVECTOR_POOL_TIMEOUT,
+                        pool_recycle=PGVECTOR_POOL_RECYCLE,
+                        pool_pre_ping=True,
+                        poolclass=QueuePool,
+                    )
+                else:
+                    engine = create_engine(
+                        PGVECTOR_DB_URL, pool_pre_ping=True, poolclass=NullPool
+                    )
+            else:
+                engine = create_engine(PGVECTOR_DB_URL, pool_pre_ping=True)
+
             SessionLocal = sessionmaker(
                 autocommit=False, autoflush=False, bind=engine, expire_on_commit=False
             )
             self.session = scoped_session(SessionLocal)
-
         try:
             # Ensure the pgvector extension is available
-            self.session.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+            if PGVECTOR_CREATE_EXTENSION:
+                self.session.execute(
+                    text(
+                        """
+                    DO $$
+                    BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+                        CREATE EXTENSION IF NOT EXISTS vector;
+                    END IF;
+                    END $$;
+                """
+                    )
+                )
 
             # Check vector length consistency
             self.check_vector_length()
@@ -253,8 +282,7 @@ class FeddersenPGVectorConnector(VectorSearchClient):
             # Pad the vector with zeros
             vector += [0.0] * (VECTOR_LENGTH - current_length)
         elif current_length > VECTOR_LENGTH:
-            # CUSTOM EDIT: Truncate the vector to VECTOR_LENGTH instead of raising an error
-            # Only valid for matryoshka embedding vectors like openai's text-embedding-3-large
+            # Truncate the vector to VECTOR_LENGTH
             vector = vector[:VECTOR_LENGTH]
         return vector
 
