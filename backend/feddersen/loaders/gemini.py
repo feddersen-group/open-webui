@@ -9,7 +9,6 @@ import asyncio
 from feddersen.config import GEMINI_PDF_EXCTRACTION_PROMPT, LITELLM_GEMINI_NAME
 
 log = logging.getLogger(__name__)
-log.setLevel(__file__)
 
 
 class Transcription(BaseModel):
