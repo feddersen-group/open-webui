@@ -7,10 +7,9 @@ from langchain_core.documents import Document
 from pydantic import BaseModel
 import asyncio
 from feddersen.config import GEMINI_PDF_EXCTRACTION_PROMPT, LITELLM_GEMINI_NAME
-from open_webui.env import SRC_LOG_LEVELS
 
 log = logging.getLogger(__name__)
-log.setLevel(SRC_LOG_LEVELS["MODELS"])
+log.setLevel(__file__)
 
 
 class Transcription(BaseModel):
