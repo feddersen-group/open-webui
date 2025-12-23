@@ -23,7 +23,6 @@ from open_webui.config import (
     PGVECTOR_POOL_TIMEOUT,
     PGVECTOR_POOL_RECYCLE,
 )
-from open_webui.env import SRC_LOG_LEVELS
 from open_webui.models.users import UserModel
 from open_webui.retrieval.vector.main import GetResult, SearchResult, VectorItem
 from pgvector.sqlalchemy import Vector
